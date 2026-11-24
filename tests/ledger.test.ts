@@ -150,6 +150,19 @@ test("tool result details do not alias live state", async () => {
 	assert.deepEqual((got.details as { tasks: Array<{ metadata: unknown }> }).tasks[0]?.metadata, { k: 1 });
 });
 
+test("a failed snapshot append leaves the list unchanged and emits nothing", async () => {
+	let fail = false;
+	const h = load({ failAppend: () => fail });
+	await h.call({ action: "create", subject: "A" });
+	fail = true;
+	const failed = await h.call({ action: "update", id: 1, status: "completed" });
+	assert.equal(failed.isError, true);
+	assert.equal(text(failed), "disk full");
+	assert.equal(h.events("todo:changed").length, 1, "only the first change was announced");
+	fail = false;
+	assert.match(text(await h.call({ action: "get", id: 1 })), /#1 \[pending\]/);
+});
+
 test("snapshot entries do not alias live state", async () => {
 	const h = load();
 	await h.call({ action: "create", subject: "A", metadata: { k: 1 } });

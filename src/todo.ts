@@ -98,12 +98,14 @@ export function registerTodoTool(pi: ExtensionAPI, namespaces: NamespaceRegistry
 				const refused = buildToolResult(action, input, getState(sessionId), { kind: "error", message: refusal });
 				return { ...refused, isError: true };
 			}
-			commitState(sessionId, result.state);
 			// Persist the snapshot as a custom entry on the calling session's branch, however the
 			// tool was reached: a call made through another tool (`ctx.executeTool`, e.g. codemode)
 			// never lands as a standalone `toolResult`, so its `details` alone would not survive
 			// replay. Pi's own codemode persists its `store()` the same way.
+			// The entry is written before the live state commits: if appending throws, the call
+			// fails with the list unchanged, so live state never runs ahead of the branch.
 			pi.appendEntry(SNAPSHOT_ENTRY_TYPE, toSnapshot(result.state));
+			commitState(sessionId, result.state);
 			pi.events.emit(CHANGED_EVENT, toChangedEvent(sessionId, result.state));
 			return buildToolResult(action, input, result.state, result.op);
 		},

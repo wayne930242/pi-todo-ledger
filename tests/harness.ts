@@ -33,7 +33,14 @@ let sessionCounter = 0;
  * `appendEntry` writes to, and a headless session context. `before` runs on the
  * bus before the extension loads (an extension that loaded first).
  */
-export function load(options: { branch?: unknown[]; before?: (h: Harness) => void } = {}): Harness {
+export function load(
+	options: {
+		branch?: unknown[];
+		before?: (h: Harness) => void;
+		/** Throw from `appendEntry` while this returns true. */
+		failAppend?: () => boolean;
+	} = {},
+): Harness {
 	const bus = new EventEmitter();
 	const handlers = new Map<string, Array<(event: unknown, ctx: ExtensionContext) => unknown>>();
 	let tool: ToolDefinition | undefined;
@@ -54,6 +61,7 @@ export function load(options: { branch?: unknown[]; before?: (h: Harness) => voi
 		registerCommand: () => {},
 		registerShortcut: () => {},
 		appendEntry: (customType: string, data: unknown) => {
+			if (options.failAppend?.()) throw new Error("disk full");
 			branch.push({ type: "custom", customType, data });
 		},
 		on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => {
@@ -80,7 +88,13 @@ export function load(options: { branch?: unknown[]; before?: (h: Harness) => voi
 		async call(params) {
 			if (!tool) throw new Error("todo tool not registered");
 			const prepared = tool.prepareArguments ? tool.prepareArguments(params) : params;
-			const result = (await tool.execute("call-1", prepared as never, undefined, undefined, ctx as never)) as ToolResult;
+			let result: ToolResult;
+			try {
+				result = (await tool.execute("call-1", prepared as never, undefined, undefined, ctx as never)) as ToolResult;
+			} catch (error) {
+				// Pi turns a thrown error into an error result.
+				result = { content: [{ type: "text", text: (error as Error).message }], details: {}, isError: true };
+			}
 			// Pi records each tool result on the branch as a message.
 			branch.push({
 				type: "message",
