@@ -1,5 +1,5 @@
 /**
- * todo tool + /todos command — thin registration shell.
+ * todo tool + /todos command — thin registration shell (forked from rpiv-todo).
  *
  * Tool/command identity, schema, types, reducer, store, replay, response
  * envelope, selectors, and view formatters live in the layered modules under
@@ -14,6 +14,8 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig, validateGuidanceFields } from "./config.ts";
+import { CHANGED_EVENT, SNAPSHOT_ENTRY_TYPE, toChangedEvent, toSnapshot } from "./ledger/contract.ts";
+import { changedTasks, type NamespaceRegistry } from "./ledger/namespaces.ts";
 import { formatStatusLabel, t } from "./state/i18n-bridge.ts";
 import { selectTasksByStatus, selectTodoCounts, selectVisibleTasks } from "./state/selectors.ts";
 import { applyTaskMutation, changesState } from "./state/state-reducer.ts";
@@ -24,7 +26,7 @@ import {
 	COMMAND_NAME,
 	ERR_REQUIRES_INTERACTIVE,
 	MSG_NO_TODOS,
-	STATE_ENTRY_TYPE,
+	type TaskAction,
 	type TaskMutationParams,
 	TOOL_LABEL,
 	TOOL_NAME,
@@ -65,9 +67,10 @@ export const DEFAULT_PROMPT_GUIDELINES: string[] = [
 	"To create several independent tasks at once, pass create with tasks: [{subject}, ...]. Do not also pass subject. tasks[] cannot blockedBy each other (ids do not exist until the call commits); create the prerequisite first, then the dependent with blockedBy. Dependency chains stay single-create.",
 	"list hides tombstoned (deleted) tasks by default; pass includeDeleted:true to see them. Pass status to filter by a single status.",
 	"Subject must be short and imperative (e.g. 'Research existing tool'); description is for long-form detail. activeForm is a present-continuous label shown while in_progress.",
+	"Optional bookkeeping fields: points (effort, 0 to 10), anchor (the check that shows the task is done, e.g. a test command), and evidence (runs of checks, each {command, sha?, result: pass|fail, at?}). On update, points and anchor replace; evidence is appended, never replaced.",
 ];
 
-export function registerTodoTool(pi: ExtensionAPI): void {
+export function registerTodoTool(pi: ExtensionAPI, namespaces: NamespaceRegistry): void {
 	const guidance = validateGuidanceFields(loadConfig().guidance);
 	pi.registerTool({
 		name: TOOL_NAME,
@@ -81,15 +84,28 @@ export function registerTodoTool(pi: ExtensionAPI): void {
 		prepareArguments: prepareTodoArguments,
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const result = applyTaskMutation(getState(sid(ctx)), params.action, params as TaskMutationParams);
-			commitState(sid(ctx), result.state);
-			const toolResult = buildToolResult(params.action, params as TaskMutationParams, result.state, result.op);
+			const sessionId = sid(ctx);
+			const action = params.action as TaskAction;
+			const input = params as TaskMutationParams;
+			const result = applyTaskMutation(getState(sessionId), action, input);
+			if (!changesState(result.op)) {
+				commitState(sessionId, result.state);
+				return buildToolResult(action, input, result.state, result.op);
+			}
+			// Namespace owners see the change before it commits; a refusal leaves state untouched.
+			const refusal = namespaces.check(changedTasks(result.op, input, result.state));
+			if (refusal) {
+				const refused = buildToolResult(action, input, getState(sessionId), { kind: "error", message: refusal });
+				return { ...refused, isError: true };
+			}
+			commitState(sessionId, result.state);
 			// Persist the snapshot as a custom entry on the calling session's branch, however the
 			// tool was reached: a call made through another tool (`ctx.executeTool`, e.g. codemode)
 			// never lands as a standalone `toolResult`, so its `details` alone would not survive
 			// replay. Pi's own codemode persists its `store()` the same way.
-			if (changesState(result.op)) pi.appendEntry(STATE_ENTRY_TYPE, toolResult.details);
-			return toolResult;
+			pi.appendEntry(SNAPSHOT_ENTRY_TYPE, toSnapshot(result.state));
+			pi.events.emit(CHANGED_EVENT, toChangedEvent(sessionId, result.state));
+			return buildToolResult(action, input, result.state, result.op);
 		},
 
 		// renderCall reflects the FOREGROUND slot, not the calling session's. Pi's

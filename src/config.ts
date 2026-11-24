@@ -1,5 +1,78 @@
-import type { GuidanceFields } from "@juicesharp/rpiv-config";
-import { loadJsonConfigWithLegacyFallback, validateGuidanceFields } from "@juicesharp/rpiv-config";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { isAbsolute, join } from "node:path";
+
+// ---------------------------------------------------------------------------
+// Config file I/O, vendored from @juicesharp/rpiv-config 2.15.0 (MIT) so this
+// package has no runtime dependency on the rpiv family.
+// ---------------------------------------------------------------------------
+
+/** Config directory name of this package. */
+export const CONFIG_NAME = "pi-todo-ledger";
+
+/** Config directory name of rpiv-todo, read when this package has no config of its own. */
+export const LEGACY_CONFIG_NAME = "rpiv-todo";
+
+export interface GuidanceFields {
+	promptSnippet?: string;
+	promptGuidelines?: string[];
+	description?: string;
+}
+
+/** `$XDG_CONFIG_HOME` when set to an absolute path (a leading `~` expands), else `~/.config`. */
+function configDirs(): string[] {
+	const fallback = join(homedir(), ".config");
+	const raw = process.env.XDG_CONFIG_HOME?.trim();
+	if (!raw) return [fallback];
+	const expanded = raw === "~" ? homedir() : raw.startsWith("~/") ? join(homedir(), raw.slice(2)) : raw;
+	if (!isAbsolute(expanded) || expanded === fallback) return [fallback];
+	return [expanded, fallback];
+}
+
+/**
+ * Candidate config paths in lookup order: this package's file under each config
+ * directory, then rpiv-todo's, so a user switching from rpiv-todo keeps their
+ * settings until they create a `pi-todo-ledger` config.
+ */
+export function configCandidates(): string[] {
+	const dirs = configDirs();
+	return [CONFIG_NAME, LEGACY_CONFIG_NAME].flatMap((name) => dirs.map((dir) => join(dir, name, "config.json")));
+}
+
+/** Parse a JSON config file; `{}` for malformed JSON or a non-object value (with a warning). */
+function readJsonObject(path: string): Record<string, unknown> {
+	try {
+		const parsed = JSON.parse(readFileSync(path, "utf-8")) as unknown;
+		if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+			return parsed as Record<string, unknown>;
+		}
+		console.warn(`${CONFIG_NAME}: config at ${path} is not a JSON object, using defaults`);
+	} catch (err) {
+		console.warn(`${CONFIG_NAME}: invalid JSON at ${path}, using defaults — ${(err as Error).message}`);
+	}
+	return {};
+}
+
+/** Validate guidance fields: non-empty strings, and a non-empty array of non-empty strings. */
+export function validateGuidanceFields(fields: unknown): GuidanceFields {
+	if (!fields || typeof fields !== "object") return {};
+	const g = fields as Record<string, unknown>;
+	const result: GuidanceFields = {};
+	if (typeof g.promptSnippet === "string" && g.promptSnippet.length > 0) {
+		result.promptSnippet = g.promptSnippet;
+	}
+	if (
+		Array.isArray(g.promptGuidelines) &&
+		g.promptGuidelines.length > 0 &&
+		g.promptGuidelines.every((s) => typeof s === "string" && s.length > 0)
+	) {
+		result.promptGuidelines = g.promptGuidelines;
+	}
+	if (typeof g.description === "string" && g.description.length > 0) {
+		result.description = g.description;
+	}
+	return result;
+}
 
 interface TodoConfig {
 	guidance?: GuidanceFields;
@@ -26,8 +99,10 @@ export const DEFAULT_COLLAPSE_KEY: CollapseKeySpec = "ctrl+shift+t";
 /** Sentinel value for `collapseKey` that disables the collapse shortcut entirely. */
 export const COLLAPSE_KEY_OFF: CollapseKeySpec = "off";
 
+/** The first existing config file wins, even when it is malformed (corruption is reported, not masked). */
 export function loadConfig(): TodoConfig {
-	return loadJsonConfigWithLegacyFallback<TodoConfig>("rpiv-todo");
+	const path = configCandidates().find((candidate) => existsSync(candidate));
+	return path ? (readJsonObject(path) as TodoConfig) : {};
 }
 
 /** Content-row budget for the overlay, read fresh on every call (per-render —
@@ -97,5 +172,3 @@ export function resolveCollapseKey(): CollapseKeySpec {
 	if (raw === COLLAPSE_KEY_OFF) return COLLAPSE_KEY_OFF;
 	return isValidCollapseKeySpec(raw) ? raw : DEFAULT_COLLAPSE_KEY;
 }
-
-export { validateGuidanceFields };

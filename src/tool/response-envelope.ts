@@ -32,6 +32,12 @@ function formatGetLines(task: Task, state: TaskState): string {
 		lines.push(`  blocks: ${blocks.map((id) => `#${id}`).join(", ")}`);
 	}
 	if (task.owner) lines.push(`  owner: ${sanitizeTerminalText(task.owner)}`);
+	if (task.points !== undefined) lines.push(`  points: ${task.points}`);
+	if (task.anchor) lines.push(`  anchor: ${sanitizeTerminalText(task.anchor)}`);
+	for (const e of task.evidence ?? []) {
+		const sha = e.sha ? ` @${sanitizeTerminalText(e.sha)}` : "";
+		lines.push(`  evidence: ${e.result} ${sanitizeTerminalText(e.command)}${sha} (${sanitizeTerminalText(e.at)})`);
+	}
 	return lines.join("\n");
 }
 

@@ -1,4 +1,13 @@
-import type { Task, TaskAction, TaskMutationParams, TaskStatus } from "../tool/types.ts";
+import {
+	type Evidence,
+	type EvidenceInput,
+	POINTS_MAX,
+	POINTS_MIN,
+	type Task,
+	type TaskAction,
+	type TaskMutationParams,
+	type TaskStatus,
+} from "../tool/types.ts";
 import { isTransitionValid } from "./invariants.ts";
 import type { TaskState } from "./state.ts";
 import { detectCycle } from "./task-graph.ts";
@@ -52,14 +61,70 @@ function errorResult(state: TaskState, message: string): ApplyResult {
 }
 
 /** Per-task create fields: on a batch they belong to each `tasks[]` item. */
-const BATCH_ITEM_FIELDS = ["description", "activeForm", "blockedBy", "owner", "metadata"] as const;
+const BATCH_ITEM_FIELDS = [
+	"description",
+	"activeForm",
+	"blockedBy",
+	"owner",
+	"metadata",
+	"points",
+	"anchor",
+	"evidence",
+] as const;
+
+/**
+ * Validate the ledger fields (`points`, `anchor`, `evidence`) of one create item or
+ * update. Pi validates tool arguments against the schema first; these checks also
+ * cover callers that reach the reducer without that validation.
+ */
+function validateLedgerFields(spec: TaskMutationParams): string | undefined {
+	if (spec.points !== undefined) {
+		const p = spec.points;
+		if (typeof p !== "number" || !Number.isFinite(p) || p < POINTS_MIN || p > POINTS_MAX) {
+			return `points must be a number from ${POINTS_MIN} to ${POINTS_MAX}`;
+		}
+	}
+	if (spec.anchor !== undefined && (typeof spec.anchor !== "string" || !spec.anchor.trim())) {
+		return "anchor must be a non-empty string";
+	}
+	if (spec.evidence !== undefined) {
+		if (!Array.isArray(spec.evidence)) return "evidence must be a list";
+		for (let i = 0; i < spec.evidence.length; i++) {
+			const error = validateEvidenceInput(spec.evidence[i]);
+			if (error) return `evidence[${i}]: ${error}`;
+		}
+	}
+	return undefined;
+}
+
+function validateEvidenceInput(value: unknown): string | undefined {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return "must be an object";
+	const e = value as Record<string, unknown>;
+	if (typeof e.command !== "string" || !e.command.trim()) return "command must be a non-empty string";
+	if (e.result !== "pass" && e.result !== "fail") return 'result must be "pass" or "fail"';
+	if (e.sha !== undefined && typeof e.sha !== "string") return "sha must be a string";
+	if (e.at !== undefined && (typeof e.at !== "string" || Number.isNaN(Date.parse(e.at)))) {
+		return "at must be an ISO 8601 time";
+	}
+	return undefined;
+}
+
+/** Stored evidence: only the contract fields, `at` normalized to ISO 8601 UTC and defaulting to the call time. */
+function toEvidence(input: EvidenceInput, now: string): Evidence {
+	return {
+		command: input.command,
+		...(input.sha !== undefined ? { sha: input.sha } : {}),
+		result: input.result,
+		at: input.at === undefined ? now : new Date(input.at).toISOString(),
+	};
+}
 
 function asCreateItem(value: unknown): TaskMutationParams | undefined {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
 	return value as TaskMutationParams;
 }
 
-function buildCreatedTask(id: number, spec: TaskMutationParams, subject: string): Task {
+function buildCreatedTask(id: number, spec: TaskMutationParams, subject: string, now: string): Task {
 	const newTask: Task = {
 		id,
 		subject,
@@ -70,6 +135,9 @@ function buildCreatedTask(id: number, spec: TaskMutationParams, subject: string)
 	if (spec.blockedBy?.length) newTask.blockedBy = [...spec.blockedBy];
 	if (spec.owner) newTask.owner = spec.owner;
 	if (spec.metadata) newTask.metadata = { ...spec.metadata };
+	if (spec.points !== undefined) newTask.points = spec.points;
+	if (spec.anchor !== undefined) newTask.anchor = spec.anchor;
+	if (spec.evidence?.length) newTask.evidence = spec.evidence.map((e) => toEvidence(e, now));
 	return newTask;
 }
 
@@ -119,6 +187,9 @@ function taskChanged(before: Task, after: Task): boolean {
 		before.description !== after.description ||
 		before.activeForm !== after.activeForm ||
 		before.owner !== after.owner ||
+		before.points !== after.points ||
+		before.anchor !== after.anchor ||
+		(before.evidence?.length ?? 0) !== (after.evidence?.length ?? 0) ||
 		!sameNumberList(before.blockedBy, after.blockedBy) ||
 		!sameRecord(before.metadata, after.metadata)
 	);
@@ -133,7 +204,12 @@ function taskChanged(before: Task, after: Task): boolean {
  * dangling/deleted blockedBy, self-block, cycles). Decision: validation stays
  * in-reducer.
  */
-export function applyTaskMutation(state: TaskState, action: TaskAction, params: TaskMutationParams): ApplyResult {
+export function applyTaskMutation(
+	state: TaskState,
+	action: TaskAction,
+	params: TaskMutationParams,
+	now: string = new Date().toISOString(),
+): ApplyResult {
 	switch (action) {
 		case "create": {
 			const batch = params.tasks;
@@ -161,6 +237,8 @@ export function applyTaskMutation(state: TaskState, action: TaskAction, params: 
 					if (!spec || !subject?.trim()) {
 						return errorResult(state, `tasks[${i}]: subject required for create`);
 					}
+					const ledgerError = validateLedgerFields(spec);
+					if (ledgerError) return errorResult(state, `tasks[${i}]: ${ledgerError}`);
 					items.push({ spec, subject });
 				}
 				const siblingIds = new Set(items.map((_, i) => state.nextId + i));
@@ -168,7 +246,9 @@ export function applyTaskMutation(state: TaskState, action: TaskAction, params: 
 					const blockedError = validateCreateBlockedBy(state, item.spec.blockedBy, siblingIds);
 					if (blockedError) return errorResult(state, blockedError);
 				}
-				const created = items.map((item, i) => buildCreatedTask(state.nextId + i, item.spec, item.subject));
+				const created = items.map((item, i) =>
+					buildCreatedTask(state.nextId + i, item.spec, item.subject, now),
+				);
 				return {
 					state: { tasks: [...state.tasks, ...created], nextId: state.nextId + created.length },
 					op: { kind: "create", taskIds: created.map((t) => t.id) },
@@ -178,9 +258,11 @@ export function applyTaskMutation(state: TaskState, action: TaskAction, params: 
 			if (!params.subject?.trim()) {
 				return errorResult(state, "subject required for create");
 			}
+			const ledgerError = validateLedgerFields(params);
+			if (ledgerError) return errorResult(state, ledgerError);
 			const blockedError = validateCreateBlockedBy(state, params.blockedBy, new Set());
 			if (blockedError) return errorResult(state, blockedError);
-			const newTask = buildCreatedTask(state.nextId, params, params.subject);
+			const newTask = buildCreatedTask(state.nextId, params, params.subject, now);
 			return {
 				state: { tasks: [...state.tasks, newTask], nextId: state.nextId + 1 },
 				op: { kind: "create", taskIds: [newTask.id] },
@@ -200,13 +282,18 @@ export function applyTaskMutation(state: TaskState, action: TaskAction, params: 
 				params.status !== undefined ||
 				params.owner !== undefined ||
 				params.metadata !== undefined ||
+				params.points !== undefined ||
+				params.anchor !== undefined ||
+				(params.evidence && params.evidence.length > 0) ||
 				(params.addBlockedBy && params.addBlockedBy.length > 0) ||
 				(params.removeBlockedBy && params.removeBlockedBy.length > 0);
 			if (!hasMutation)
 				return errorResult(
 					state,
-					"update requires at least one mutable field: subject, description, activeForm, status, owner, metadata, addBlockedBy, or removeBlockedBy",
+					"update requires at least one mutable field: subject, description, activeForm, status, owner, metadata, points, anchor, evidence, addBlockedBy, or removeBlockedBy",
 				);
+			const ledgerError = validateLedgerFields(params);
+			if (ledgerError) return errorResult(state, ledgerError);
 
 			let newStatus = current.status;
 			if (params.status !== undefined) {
@@ -249,6 +336,11 @@ export function applyTaskMutation(state: TaskState, action: TaskAction, params: 
 			if (params.description !== undefined) updated.description = params.description;
 			if (params.activeForm !== undefined) updated.activeForm = params.activeForm;
 			if (params.owner !== undefined) updated.owner = params.owner;
+			if (params.points !== undefined) updated.points = params.points;
+			if (params.anchor !== undefined) updated.anchor = params.anchor;
+			if (params.evidence?.length) {
+				updated.evidence = [...(current.evidence ?? []), ...params.evidence.map((e) => toEvidence(e, now))];
+			}
 			if (newBlockedBy.length) updated.blockedBy = newBlockedBy;
 			else delete updated.blockedBy;
 			if (newMetadata === undefined) delete updated.metadata;

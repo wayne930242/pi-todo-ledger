@@ -1,10 +1,32 @@
-import type { Task, TaskDetails, TaskStatus } from "../tool/types.ts";
+import { SNAPSHOT_ENTRY_TYPE } from "../ledger/contract.ts";
+import {
+	LEGACY_STATE_ENTRY_TYPE,
+	POINTS_MAX,
+	POINTS_MIN,
+	type Task,
+	type TaskDetails,
+	type TaskStatus,
+	TOOL_NAME,
+} from "../tool/types.ts";
 import { EMPTY_STATE, type TaskState } from "./state.ts";
 
 const TASK_STATUSES: ReadonlySet<unknown> = new Set<TaskStatus>(["pending", "in_progress", "completed", "deleted"]);
 
 const optional = (value: unknown, valid: (v: unknown) => boolean): boolean => value === undefined || valid(value);
 const isString = (v: unknown): boolean => typeof v === "string";
+const isPoints = (v: unknown): boolean =>
+	typeof v === "number" && Number.isFinite(v) && v >= POINTS_MIN && v <= POINTS_MAX;
+
+function isEvidence(value: unknown): boolean {
+	if (!value || typeof value !== "object") return false;
+	const e = value as Record<string, unknown>;
+	return (
+		typeof e.command === "string" &&
+		(e.result === "pass" || e.result === "fail") &&
+		typeof e.at === "string" &&
+		optional(e.sha, isString)
+	);
+}
 
 function isTask(value: unknown): value is Task {
 	if (!value || typeof value !== "object") return false;
@@ -17,7 +39,10 @@ function isTask(value: unknown): value is Task {
 		optional(t.activeForm, isString) &&
 		optional(t.owner, isString) &&
 		optional(t.blockedBy, (v) => Array.isArray(v) && v.every((id) => Number.isSafeInteger(id))) &&
-		optional(t.metadata, (v) => typeof v === "object" && v !== null)
+		optional(t.metadata, (v) => typeof v === "object" && v !== null) &&
+		optional(t.points, isPoints) &&
+		optional(t.anchor, isString) &&
+		optional(t.evidence, (v) => Array.isArray(v) && v.every(isEvidence))
 	);
 }
 
@@ -33,34 +58,38 @@ export function isTaskDetails(value: unknown): value is TaskDetails {
 	return Array.isArray(v.tasks) && v.tasks.every(isTask) && Number.isSafeInteger(v.nextId);
 }
 
-/** Fresh `TaskState` from a persisted snapshot — copies each task so replay never aliases branch data. */
-function stateOf(details: TaskDetails): TaskState {
-	return { tasks: details.tasks.map((t) => ({ ...t })), nextId: details.nextId };
+/** A `todo/v1` entry's data (CONTRACT.md): `{ v: 1, tasks, nextId }`. */
+export function isSnapshotV1(value: unknown): value is { v: 1; tasks: Task[]; nextId: number } {
+	return isTaskDetails(value) && (value as unknown as { v?: unknown }).v === 1;
+}
+
+/** Fresh `TaskState` from a persisted snapshot — deep-copies the tasks so replay never aliases branch data. */
+function stateOf(details: { tasks: Task[]; nextId: number }): TaskState {
+	return { tasks: structuredClone(details.tasks), nextId: details.nextId };
 }
 
 /**
  * Walk the current branch in chronological order and return the last persisted
- * snapshot (last-write-wins). Two sources carry the same `TaskDetails` shape:
+ * snapshot (last-write-wins within a source). Sources, in order of authority:
  *
- * - `custom` entries of type `"rpiv-todo-state"` (mirrors `STATE_ENTRY_TYPE` in
- *   `tool/types.ts` — a literal here, like `"todo"`, so `state/` keeps no value
- *   import of the Pi-aware tool layer). Written by `todo.ts` for EVERY
- *   state-changing call, including calls made through another tool
- *   (`ctx.executeTool`, e.g. codemode) that never land as a `toolResult`.
- * - `toolResult` messages with `toolName === "todo"` — the `details` envelope.
+ * 1. `custom` entries of type `"todo/v1"` — the public snapshot this package
+ *    writes for every state-changing call (CONTRACT.md).
+ * 2. `custom` entries of type `"rpiv-todo-state"` — written by rpiv-todo before
+ *    this fork; read so a session started under rpiv-todo keeps its list.
+ * 3. `toolResult` messages with `toolName === "todo"` — the `details` envelope,
+ *    the only record in sessions older than either entry type.
  *
- * Once the branch carries any state entry, state entries are authoritative:
- * they are appended at commit time for every change, so a `toolResult`
- * snapshot can only repeat or predate them. Branches with no state entry
- * (sessions written before entries existed) replay from `toolResult` snapshots.
- * When neither exists, returns `EMPTY_STATE`.
+ * A higher source, once present, wins even when a lower one appears later on
+ * the branch: entries are appended at commit time for every change, so a lower
+ * source can only repeat or predate them. Invalid snapshots are skipped whole.
+ * When no source exists, returns `EMPTY_STATE`.
  *
  * Pure of module state — `index.ts` writes the returned snapshot into the
- * store after this returns. The function explicitly does NOT touch the store
- * cell.
+ * store after this returns.
  */
 export function replayFromBranch(ctx: { sessionManager: { getBranch(): Iterable<unknown> } }): TaskState {
-	let fromEntries: TaskState | undefined;
+	let fromV1: TaskState | undefined;
+	let fromLegacyEntries: TaskState | undefined;
 	let fromToolResults: TaskState | undefined;
 	for (const entry of ctx.sessionManager.getBranch()) {
 		const e = entry as {
@@ -70,14 +99,19 @@ export function replayFromBranch(ctx: { sessionManager: { getBranch(): Iterable<
 			message?: { role?: string; toolName?: string; details?: unknown };
 		};
 		if (e.type === "custom") {
-			if (e.customType === "rpiv-todo-state" && isTaskDetails(e.data)) fromEntries = stateOf(e.data);
+			if (e.customType === SNAPSHOT_ENTRY_TYPE && isSnapshotV1(e.data)) fromV1 = stateOf(e.data);
+			else if (e.customType === LEGACY_STATE_ENTRY_TYPE && isTaskDetails(e.data)) {
+				fromLegacyEntries = stateOf(e.data);
+			}
 			continue;
 		}
 		if (e.type !== "message") continue;
 		const msg = e.message;
-		if (msg?.role !== "toolResult" || msg.toolName !== "todo") continue;
+		if (msg?.role !== "toolResult" || msg.toolName !== TOOL_NAME) continue;
 		if (!isTaskDetails(msg.details)) continue;
 		fromToolResults = stateOf(msg.details);
 	}
-	return fromEntries ?? fromToolResults ?? { tasks: [...EMPTY_STATE.tasks], nextId: EMPTY_STATE.nextId };
+	return (
+		fromV1 ?? fromLegacyEntries ?? fromToolResults ?? { tasks: [...EMPTY_STATE.tasks], nextId: EMPTY_STATE.nextId }
+	);
 }

@@ -4,8 +4,8 @@ import { type Static, Type } from "typebox";
 // ---------------------------------------------------------------------------
 // Tool / command identity — verbatim string boundaries.
 // Tool name "todo" is the persistence key for branch replay (filtering
-// `toolResult.toolName === "todo"`) AND the permissions entry at
-// `templates/pi-permissions.jsonc:26`. DO NOT rename.
+// `toolResult.toolName === "todo"`) and the name agents and prompts call.
+// DO NOT rename.
 // ---------------------------------------------------------------------------
 
 export const TOOL_NAME = "todo";
@@ -13,13 +13,12 @@ export const TOOL_LABEL = "Todo";
 export const COMMAND_NAME = "todos";
 
 /**
- * Custom session-entry type carrying the `details` snapshot of every
- * state-changing `todo` call — the replay source that survives calls made
- * through another tool (`ctx.executeTool`, e.g. Pi's codemode), whose results
- * never land on the branch as standalone `toolResult` messages. Persistence key
- * for branch replay, like `TOOL_NAME`. DO NOT rename.
+ * Custom session-entry type rpiv-todo wrote for every state-changing call,
+ * carrying the call's `details`. This package writes `todo/v1` entries instead
+ * (src/ledger/contract.ts) and reads these only to replay sessions started
+ * under rpiv-todo.
  */
-export const STATE_ENTRY_TYPE = "rpiv-todo-state";
+export const LEGACY_STATE_ENTRY_TYPE = "rpiv-todo-state";
 
 // ---------------------------------------------------------------------------
 // User-facing strings (kept stable for /todos UX parity).
@@ -36,6 +35,29 @@ export type TaskStatus = "pending" | "in_progress" | "completed" | "deleted";
 
 export type TaskAction = "create" | "update" | "list" | "get" | "delete" | "clear";
 
+export type EvidenceResult = "pass" | "fail";
+
+/** One recorded run of a check: what ran, on which revision, how it ended, and when. */
+export interface Evidence {
+	command: string;
+	sha?: string;
+	result: EvidenceResult;
+	/** ISO 8601 timestamp. */
+	at: string;
+}
+
+/** Evidence as a caller supplies it: `at` defaults to the time of the call. */
+export interface EvidenceInput {
+	command: string;
+	sha?: string;
+	result: EvidenceResult;
+	at?: string;
+}
+
+/** Inclusive bounds of `Task.points`. */
+export const POINTS_MIN = 0;
+export const POINTS_MAX = 10;
+
 export interface Task {
 	id: number;
 	subject: string;
@@ -45,6 +67,12 @@ export interface Task {
 	blockedBy?: number[];
 	owner?: string;
 	metadata?: Record<string, unknown>;
+	/** Effort estimate, a number from 0 to 10. */
+	points?: number;
+	/** The check that shows this task is done, e.g. a test command. */
+	anchor?: string;
+	/** Runs of checks, oldest first. Append-only. */
+	evidence?: Evidence[];
 }
 
 /**
@@ -74,6 +102,9 @@ export interface CreateTaskInput {
 	blockedBy?: number[];
 	owner?: string;
 	metadata?: Record<string, unknown>;
+	points?: number;
+	anchor?: string;
+	evidence?: EvidenceInput[];
 }
 
 export interface TaskMutationParams {
@@ -87,6 +118,9 @@ export interface TaskMutationParams {
 	removeBlockedBy?: number[];
 	owner?: string;
 	metadata?: Record<string, unknown>;
+	points?: number;
+	anchor?: string;
+	evidence?: EvidenceInput[];
 	id?: number;
 	includeDeleted?: boolean;
 	/** Batch create items. One-of with `subject` on `create`. */
@@ -97,6 +131,20 @@ export interface TaskMutationParams {
 // TypeBox parameter schema — every `description` doubles as LLM-facing prompt
 // copy. Field order and wording are pinned by registration tests.
 // ---------------------------------------------------------------------------
+
+const PointsSchema = (description: string) =>
+	Type.Number({ minimum: POINTS_MIN, maximum: POINTS_MAX, description });
+
+const AnchorSchema = (description: string) => Type.String({ minLength: 1, description });
+
+const EvidenceInputSchema = Type.Object({
+	command: Type.String({ minLength: 1, description: "The check that ran, e.g. 'npm test -- replay'" }),
+	sha: Type.Optional(Type.String({ description: "Revision the check ran on, e.g. a git commit SHA" })),
+	result: StringEnum(["pass", "fail"] as const, { description: "How the run ended" }),
+	at: Type.Optional(Type.String({ description: "ISO 8601 time of the run. Default: now" })),
+});
+
+const EvidenceSchema = (description: string) => Type.Array(EvidenceInputSchema, { description });
 
 const CreateTaskInputSchema = Type.Object({
 	subject: Type.String({ description: "Task subject line" }),
@@ -118,6 +166,9 @@ const CreateTaskInputSchema = Type.Object({
 			description: "Arbitrary metadata",
 		}),
 	),
+	points: Type.Optional(PointsSchema("Effort points, 0 to 10")),
+	anchor: Type.Optional(AnchorSchema("The check that shows this task is done, e.g. a test command")),
+	evidence: Type.Optional(EvidenceSchema("Check runs already recorded for this task")),
 });
 
 export const TodoParamsSchema = Type.Object({
@@ -159,6 +210,17 @@ export const TodoParamsSchema = Type.Object({
 		Type.Record(Type.String(), Type.Unknown(), {
 			description: "Arbitrary metadata; pass null value for a key to delete that key on update",
 		}),
+	),
+	points: Type.Optional(PointsSchema("Effort points, 0 to 10 (create or update; update replaces)")),
+	anchor: Type.Optional(
+		AnchorSchema(
+			"The check that shows this task is done, e.g. a test command (create or update; update replaces)",
+		),
+	),
+	evidence: Type.Optional(
+		EvidenceSchema(
+			"Check runs to record: the initial list on create; on update, appended to the task's evidence (never replaced or removed)",
+		),
 	),
 	id: Type.Optional(
 		Type.Number({

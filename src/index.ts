@@ -1,6 +1,8 @@
 /**
- * rpiv-todo — Pi extension. Registers the `todo` tool, `/todos` slash
- * command, and the persistent TodoOverlay widget.
+ * pi-todo-ledger — Pi extension, forked from rpiv-todo 2.15.0. Registers the
+ * `todo` tool, `/todos` slash command, and the persistent TodoOverlay widget,
+ * and serves the bookkeeping contract in CONTRACT.md: `todo/v1` snapshot
+ * entries, the `todo:changed` event, and `todo:namespace` validators.
  *
  * TUI chrome strings localize at render time via the i18n bridge. Strings are
  * registered with rpiv-i18n here, once, at module init — but only when the
@@ -14,14 +16,16 @@
  * `SUPPORTED_LOCALES` from the SDK. See `@juicesharp/rpiv-i18n` README →
  * "Contributing translations" for the full convention.
  *
- * Extracted from rpiv-pi@7525a5d. Tool name "todo" and widget key
- * "rpiv-todos" preserved verbatim so existing session history replays
- * correctly after upgrade.
+ * Tool name "todo" and widget key "rpiv-todos" are kept from rpiv-todo, and
+ * replay reads rpiv-todo's records, so sessions started under rpiv-todo keep
+ * their list.
  */
 
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
 import { COLLAPSE_KEY_OFF, resolveCollapseKey } from "./config.ts";
+import { CHANGED_EVENT, CONTRACT_VERSION, NAMESPACE_EVENT, READY_EVENT, toChangedEvent } from "./ledger/contract.ts";
+import { NamespaceRegistry } from "./ledger/namespaces.ts";
 import { I18N_NAMESPACE } from "./state/i18n-bridge.ts";
 import { replayFromBranch } from "./state/replay.ts";
 import {
@@ -29,12 +33,16 @@ import {
 	evictSession,
 	getActiveRenderSession,
 	getRenderState,
+	getState,
 	replaceState,
 	setActiveRenderSession,
 	sid,
 } from "./state/store.ts";
 import { registerTodosCommand, registerTodoTool, TOOL_NAME } from "./todo.ts";
 import type { TodoOverlay } from "./todo-overlay.ts";
+
+// Held in a variable so the type checker does not require the optional peer.
+const I18N_LOADER: string = "@juicesharp/rpiv-i18n/loader";
 
 type I18nLoader = {
 	registerLocalesFromDir: (namespace: string, packageUrl: string, options?: { label?: string }) => void;
@@ -101,8 +109,8 @@ export function makeTodoOverlayLoader(
 // The `/loader` subpath is used instead of the SDK entry so the i18n-ui +
 // pi-tui modules are not pulled into our load graph just to register strings.
 try {
-	const sdk = (await import("@juicesharp/rpiv-i18n/loader")) as I18nLoader;
-	sdk.registerLocalesFromDir(I18N_NAMESPACE, import.meta.url, { label: "rpiv-todo" });
+	const sdk = (await import(I18N_LOADER)) as I18nLoader;
+	sdk.registerLocalesFromDir(I18N_NAMESPACE, import.meta.url, { label: "pi-todo-ledger" });
 } catch {
 	// SDK absent — extension still loads with English-only UI.
 }
@@ -147,8 +155,23 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		todoOverlay.update();
 	}
 
-	registerTodoTool(pi);
+	// Namespace owners register on `todo:namespace`; `todo:ready` asks the ones
+	// that loaded before this extension to register again.
+	const namespaces = new NamespaceRegistry();
+	pi.events.on(NAMESPACE_EVENT, (payload) => {
+		const ignored = namespaces.register(payload);
+		if (ignored) console.warn(`[pi-todo-ledger] ignored ${ignored}`);
+	});
+
+	registerTodoTool(pi, namespaces);
 	registerTodosCommand(pi);
+	pi.events.emit(READY_EVENT, { v: CONTRACT_VERSION });
+
+	// Replay a session's list from its branch into its slot and announce it.
+	const restore = (id: string, ctx: Parameters<typeof replayFromBranch>[0]): void => {
+		replaceState(id, replayFromBranch(ctx));
+		pi.events.emit(CHANGED_EVENT, toChangedEvent(id, getState(id)));
+	};
 
 	// Collapse/expand hotkey for the todo overlay. The key is resolved once at
 	// factory scope from config (register-once contract: a config change needs
@@ -183,7 +206,7 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		let isForeground = false;
 		try {
 			const id = sid(ctx);
-			replaceState(id, replayFromBranch(ctx));
+			restore(id, ctx);
 			isForeground = id === getActiveRenderSession();
 		} catch (e) {
 			if (!isStaleCtxError(e)) throw e;
@@ -196,7 +219,7 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		try {
 			id = sid(ctx);
 			// Every session replays into its OWN data slot (Phase 1 isolation).
-			replaceState(id, replayFromBranch(ctx));
+			restore(id, ctx);
 		} catch (e) {
 			// Parity with compact/tree/shutdown: session_start is the fresh-ctx event
 			// so the stale risk is low, but a stale/throwing ctx has nothing to bind —
@@ -272,7 +295,7 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 			// stale-namespace error still propagates: it never self-heals, and the
 			// user needs its restart guidance.
 			if (isStaleOverlayModuleError(e)) throw e;
-			console.warn(`[rpiv-todo] overlay refresh failed (will retry on next update): ${formatError(e)}`);
+			console.warn(`[pi-todo-ledger] overlay refresh failed (will retry on next update): ${formatError(e)}`);
 		}
 	});
 

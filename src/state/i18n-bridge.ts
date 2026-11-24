@@ -1,9 +1,9 @@
 /**
- * i18n bridge for rpiv-todo — single thin import surface so every call site
+ * i18n bridge for pi-todo-ledger (inherited from rpiv-todo) — single thin import surface so every call site
  * routes through one module. Backed by `@juicesharp/rpiv-i18n`'s SDK when
  * available; degrades to canonical-English fallbacks when not.
  *
- * - `t(key, fallback)` is `scope("@juicesharp/rpiv-todo")` if the SDK is
+ * - `t(key, fallback)` is `scope("pi-todo-ledger")` if the SDK is
  *   installed (live `/languages` updates propagate). If the SDK is missing
  *   (standalone install without rpiv-i18n), `t` is an identity passthrough
  *   that returns the inline English fallback at every call site, so the
@@ -21,7 +21,10 @@
 
 import type { TaskStatus } from "../tool/types.ts";
 
-export const I18N_NAMESPACE = "@juicesharp/rpiv-todo";
+export const I18N_NAMESPACE = "pi-todo-ledger";
+
+// Held in a variable so the type checker does not require the optional peer.
+const I18N_SDK: string = "@juicesharp/rpiv-i18n";
 
 type ScopeFn = (key: string, fallback: string) => string;
 type I18nSDK = { scope: (namespace: string) => ScopeFn };
@@ -37,7 +40,7 @@ type I18nSDK = { scope: (namespace: string) => ScopeFn };
 // before evaluating any importer.
 let scopeImpl: ScopeFn;
 try {
-	const sdk = (await import("@juicesharp/rpiv-i18n")) as I18nSDK;
+	const sdk = (await import(I18N_SDK)) as I18nSDK;
 	scopeImpl = sdk.scope(I18N_NAMESPACE);
 } catch {
 	scopeImpl = (_key, fallback) => fallback;

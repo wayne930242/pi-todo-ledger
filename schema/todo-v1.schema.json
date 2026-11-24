@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/wayne930242/pi-todo-ledger/blob/main/schema/todo-v1.schema.json",
+  "title": "todo/v1 snapshot",
+  "description": "Data of a session entry with customType \"todo/v1\": the whole todo list after a change. See CONTRACT.md. Readers ignore properties they do not know; later v1 releases may add optional properties.",
+  "$ref": "#/$defs/snapshot",
+  "$defs": {
+    "snapshot": {
+      "type": "object",
+      "required": ["v", "tasks", "nextId"],
+      "properties": {
+        "v": { "const": 1 },
+        "tasks": {
+          "description": "Every task in id order, including deleted tombstones.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/task" }
+        },
+        "nextId": {
+          "description": "Id the next created task receives.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "taskStatus": {
+      "enum": ["pending", "in_progress", "completed", "deleted"]
+    },
+    "task": {
+      "type": "object",
+      "required": ["id", "subject", "status"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1 },
+        "subject": { "type": "string" },
+        "status": { "$ref": "#/$defs/taskStatus" },
+        "description": { "type": "string" },
+        "activeForm": {
+          "description": "Present-continuous label shown while the task is in progress.",
+          "type": "string"
+        },
+        "blockedBy": {
+          "description": "Ids of tasks this task waits on.",
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1 }
+        },
+        "owner": {
+          "description": "Who works on the task, e.g. an agent or session name.",
+          "type": "string"
+        },
+        "metadata": {
+          "description": "Free-form fields. A top-level key is a namespace; an extension that registered it with todo:namespace validates its value before every change.",
+          "type": "object"
+        },
+        "points": {
+          "description": "Effort estimate.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "anchor": {
+          "description": "The check that shows the task is done, e.g. a test command.",
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "description": "Runs of checks, oldest first. Append-only: a later snapshot of the same task starts with the earlier snapshot's entries.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["command", "result", "at"],
+      "properties": {
+        "command": {
+          "description": "The check that ran.",
+          "type": "string",
+          "minLength": 1
+        },
+        "sha": {
+          "description": "Revision the check ran on, e.g. a git commit SHA.",
+          "type": "string"
+        },
+        "result": { "enum": ["pass", "fail"] },
+        "at": {
+          "description": "ISO 8601 time of the run.",
+          "type": "string"
+        }
+      }
+    },
+    "changedEvent": {
+      "title": "todo:changed payload",
+      "description": "Emitted on pi.events after every change and when a session's list is restored.",
+      "type": "object",
+      "required": ["v", "sessionId", "tasks"],
+      "properties": {
+        "v": { "const": 1 },
+        "sessionId": { "type": "string" },
+        "tasks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/task" }
+        }
+      }
+    },
+    "readyEvent": {
+      "title": "todo:ready payload",
+      "description": "Emitted on pi.events when the todo extension loads; namespace owners register again on it.",
+      "type": "object",
+      "required": ["v"],
+      "properties": {
+        "v": { "const": 1 }
+      }
+    },
+    "namespaceEvent": {
+      "title": "todo:namespace payload",
+      "description": "Emitted on pi.events by a namespace owner. Besides v and ns it carries validate(value, task, op) => string | undefined, a function, which JSON Schema cannot describe.",
+      "type": "object",
+      "required": ["v", "ns"],
+      "properties": {
+        "v": { "const": 1 },
+        "ns": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
