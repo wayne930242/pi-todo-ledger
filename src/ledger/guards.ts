@@ -8,6 +8,9 @@
 
 import { CONTRACT_VERSION, GUARD_EVENT, type GuardCheck, type TodoChangeV1 } from "./contract.ts";
 
+/** Private marker for an expired timer; no guard can return it. */
+const TIMED_OUT: unique symbol = Symbol("timed out");
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -52,12 +55,12 @@ export class GuardRegistry {
 
 	private async runOne(id: string, check: GuardCheck, change: TodoChangeV1): Promise<string | undefined> {
 		let timer: ReturnType<typeof setTimeout> | undefined;
-		const timedOut = new Promise<"timeout">((resolve) => {
-			timer = setTimeout(() => resolve("timeout"), this.timeoutMs);
+		const timedOut = new Promise<typeof TIMED_OUT>((resolve) => {
+			timer = setTimeout(() => resolve(TIMED_OUT), this.timeoutMs);
 		});
 		try {
 			const reason = await Promise.race([Promise.resolve().then(() => check(structuredClone(change))), timedOut]);
-			if (reason === "timeout") return `guard ${id} timed out after ${this.timeoutMs} ms`;
+			if (reason === TIMED_OUT) return `guard ${id} timed out after ${this.timeoutMs} ms`;
 			return typeof reason === "string" && reason.length > 0 ? `guard ${id} refused: ${reason}` : undefined;
 		} catch (error) {
 			return `guard ${id} refused: guard threw: ${error instanceof Error ? error.message : String(error)}`;

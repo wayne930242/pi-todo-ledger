@@ -448,6 +448,12 @@ test("a guard that times out or throws refuses the call", async () => {
 	assert.equal(snapshots(h.branch).length, 0);
 });
 
+test("a guard whose reason is the word timeout is a refusal, not a timeout", async () => {
+	const h = load({ guardTimeoutMs: 1000 });
+	h.emit("todo:guard", { v: 1, id: "literal", check: async () => "timeout" });
+	assert.equal(text(await h.call({ action: "create", subject: "A" })), "Error: guard literal refused: timeout");
+});
+
 // ---------------------------------------------------------------------------
 // Fields: points, anchor, evidence
 // ---------------------------------------------------------------------------
