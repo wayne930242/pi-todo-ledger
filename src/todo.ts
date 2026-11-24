@@ -14,11 +14,13 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig, validateGuidanceFields } from "./config.ts";
-import { CHANGED_EVENT, SNAPSHOT_ENTRY_TYPE, toChangedEvent, toSnapshot } from "./ledger/contract.ts";
+import { CHANGED_EVENT, type GuardOp, SNAPSHOT_ENTRY_TYPE, toChangedEvent, toSnapshot } from "./ledger/contract.ts";
+import type { GuardRegistry } from "./ledger/guards.ts";
 import { changedTasks, type NamespaceRegistry } from "./ledger/namespaces.ts";
 import { formatStatusLabel, t } from "./state/i18n-bridge.ts";
 import { selectTasksByStatus, selectTodoCounts, selectVisibleTasks } from "./state/selectors.ts";
 import { applyTaskMutation, changesState } from "./state/state-reducer.ts";
+import { withSessionLock } from "./state/session-lock.ts";
 import { commitState, getRenderState, getState, sid } from "./state/store.ts";
 import { prepareTodoArguments } from "./tool/normalize-params.ts";
 import { buildToolResult } from "./tool/response-envelope.ts";
@@ -70,7 +72,7 @@ export const DEFAULT_PROMPT_GUIDELINES: string[] = [
 	"Optional bookkeeping fields: points (effort, 0 to 10), anchor (the check that shows the task is done, e.g. a test command), and evidence (runs of checks, each {command, sha?, result: pass|fail, at?}). On update, points and anchor replace; evidence is appended, never replaced.",
 ];
 
-export function registerTodoTool(pi: ExtensionAPI, namespaces: NamespaceRegistry): void {
+export function registerTodoTool(pi: ExtensionAPI, namespaces: NamespaceRegistry, guards: GuardRegistry): void {
 	const guidance = validateGuidanceFields(loadConfig().guidance);
 	pi.registerTool({
 		name: TOOL_NAME,
@@ -85,29 +87,42 @@ export function registerTodoTool(pi: ExtensionAPI, namespaces: NamespaceRegistry
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const sessionId = sid(ctx);
-			const action = params.action as TaskAction;
-			const input = params as TaskMutationParams;
-			const result = applyTaskMutation(getState(sessionId), action, input);
-			if (!changesState(result.op)) {
+			return withSessionLock(sessionId, async () => {
+				const action = params.action as TaskAction;
+				const input = params as TaskMutationParams;
+				const before = getState(sessionId);
+				const result = applyTaskMutation(before, action, input);
+				if (!changesState(result.op)) {
+					commitState(sessionId, result.state);
+					return buildToolResult(action, input, result.state, result.op);
+				}
+				// Namespace owners, then change guards, see the change before it commits; a refusal
+				// leaves state untouched.
+				const refusal =
+					namespaces.check(changedTasks(result.op, input, result.state)) ??
+					(await guards.check({
+						op: action as GuardOp,
+						params: input as Record<string, unknown>,
+						before: before.tasks,
+						after: result.state.tasks,
+						sessionId,
+						cwd: ctx.cwd,
+					}));
+				if (refusal) {
+					const refused = buildToolResult(action, input, before, { kind: "error", message: refusal });
+					return { ...refused, isError: true };
+				}
+				// Persist the snapshot as a custom entry on the calling session's branch, however the
+				// tool was reached: a call made through another tool (`ctx.executeTool`, e.g. codemode)
+				// never lands as a standalone `toolResult`, so its `details` alone would not survive
+				// replay. Pi's own codemode persists its `store()` the same way.
+				// The entry is written before the live state commits: if appending throws, the call
+				// fails with the list unchanged, so live state never runs ahead of the branch.
+				pi.appendEntry(SNAPSHOT_ENTRY_TYPE, toSnapshot(result.state));
 				commitState(sessionId, result.state);
+				pi.events.emit(CHANGED_EVENT, toChangedEvent(sessionId, result.state));
 				return buildToolResult(action, input, result.state, result.op);
-			}
-			// Namespace owners see the change before it commits; a refusal leaves state untouched.
-			const refusal = namespaces.check(changedTasks(result.op, input, result.state));
-			if (refusal) {
-				const refused = buildToolResult(action, input, getState(sessionId), { kind: "error", message: refusal });
-				return { ...refused, isError: true };
-			}
-			// Persist the snapshot as a custom entry on the calling session's branch, however the
-			// tool was reached: a call made through another tool (`ctx.executeTool`, e.g. codemode)
-			// never lands as a standalone `toolResult`, so its `details` alone would not survive
-			// replay. Pi's own codemode persists its `store()` the same way.
-			// The entry is written before the live state commits: if appending throws, the call
-			// fails with the list unchanged, so live state never runs ahead of the branch.
-			pi.appendEntry(SNAPSHOT_ENTRY_TYPE, toSnapshot(result.state));
-			commitState(sessionId, result.state);
-			pi.events.emit(CHANGED_EVENT, toChangedEvent(sessionId, result.state));
-			return buildToolResult(action, input, result.state, result.op);
+			});
 		},
 
 		// renderCall reflects the FOREGROUND slot, not the calling session's. Pi's

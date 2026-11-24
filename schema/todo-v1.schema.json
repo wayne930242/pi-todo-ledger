@@ -111,6 +111,30 @@
         "v": { "const": 1 }
       }
     },
+    "guardEvent": {
+      "title": "todo:guard payload",
+      "description": "Emitted on pi.events by a guard owner. Besides v and id it carries check(change) => string | undefined | Promise<string | undefined>, a function, which JSON Schema cannot describe; change matches $defs/change.",
+      "type": "object",
+      "required": ["v", "id"],
+      "properties": {
+        "v": { "const": 1 },
+        "id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "change": {
+      "title": "Argument of a guard's check",
+      "description": "One todo call that would change the list.",
+      "type": "object",
+      "required": ["op", "params", "before", "after", "sessionId", "cwd"],
+      "properties": {
+        "op": { "enum": ["create", "update", "delete", "clear"] },
+        "params": { "description": "The call's arguments as the tool received them.", "type": "object" },
+        "before": { "type": "array", "items": { "$ref": "#/$defs/task" } },
+        "after": { "type": "array", "items": { "$ref": "#/$defs/task" } },
+        "sessionId": { "type": "string" },
+        "cwd": { "type": "string" }
+      }
+    },
     "namespaceEvent": {
       "title": "todo:namespace payload",
       "description": "Emitted on pi.events by a namespace owner. Besides v and ns it carries validate(value, task, op) => string | undefined, a function, which JSON Schema cannot describe.",

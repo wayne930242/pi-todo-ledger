@@ -346,6 +346,109 @@ test("owners that loaded first register on todo:ready; malformed registrations a
 });
 
 // ---------------------------------------------------------------------------
+// Change guards
+// ---------------------------------------------------------------------------
+
+test("a guard sees every mutating call with before, after, params, session, and cwd, and can refuse it", async () => {
+	const changes: Array<Record<string, unknown>> = [];
+	const h = load({
+		before: (early) => {
+			// Registered before the extension loaded: it registers again on todo:ready.
+			early.bus.on("todo:ready", () =>
+				early.emit("todo:guard", {
+					v: 1,
+					id: "steps",
+					check: (change: Record<string, unknown>) => {
+						changes.push(change);
+						const after = change.after as Array<{ metadata?: Record<string, unknown> }>;
+						if (change.op === "create" && after.some((t) => t.metadata?.step === undefined)) {
+							return "every task needs metadata.step";
+						}
+						if (change.op === "clear") return "steps are in progress";
+						return undefined;
+					},
+				}),
+			);
+		},
+	});
+	const refused = await h.call({ action: "create", subject: "No step" });
+	assert.equal(refused.isError, true);
+	assert.equal(text(refused), "Error: guard steps refused: every task needs metadata.step");
+	assert.deepEqual(changes[0], {
+		op: "create",
+		params: { action: "create", subject: "No step" },
+		before: [],
+		after: [{ id: 1, subject: "No step", status: "pending" }],
+		sessionId: h.sessionId,
+		cwd: "/work/project",
+	});
+	assert.equal(snapshots(h.branch).length, 0);
+	assert.equal(h.events("todo:changed").length, 0);
+
+	const batch = await h.call({ action: "create", tasks: [{ subject: "A", metadata: { step: 1 } }, { subject: "B" }] });
+	assert.equal(text(batch), "Error: guard steps refused: every task needs metadata.step");
+
+	await h.call({ action: "create", subject: "Stepped", metadata: { step: 1 } });
+	await h.call({ action: "delete", id: 1 });
+	const cleared = await h.call({ action: "clear" });
+	assert.equal(text(cleared), "Error: guard steps refused: steps are in progress");
+	assert.deepEqual(
+		changes.map((c) => c.op),
+		["create", "create", "create", "delete", "clear"],
+	);
+	const del = changes[3] as { before: Array<{ status: string }>; after: Array<{ status: string }> };
+	assert.equal(del.before[0]?.status, "pending");
+	assert.equal(del.after[0]?.status, "deleted");
+	assert.deepEqual((changes[4] as { after: unknown[] }).after, []);
+	assert.equal(snapshots(h.branch).length, 2, "only the accepted create and delete wrote entries");
+});
+
+test("guards are awaited, serialize calls per session, and run after namespace validators", async () => {
+	const h = load();
+	let guardCalls = 0;
+	h.emit("todo:namespace", { v: 1, ns: "ns", validate: (value: unknown) => (value === "bad" ? "bad" : undefined) });
+	h.emit("todo:guard", {
+		v: 1,
+		id: "async",
+		check: async (change: { params: { subject?: string } }) => {
+			guardCalls++;
+			await new Promise((resolve) => setTimeout(resolve, 5));
+			return change.params.subject === "refuse me" ? "refused later" : undefined;
+		},
+	});
+	const [a, b] = await Promise.all([h.call({ action: "create", subject: "A" }), h.call({ action: "create", subject: "B" })]);
+	assert.equal(text(a), "Created #1: A (pending)");
+	assert.equal(text(b), "Created #2: B (pending)");
+	assert.equal(text(await h.call({ action: "create", subject: "refuse me" })), "Error: guard async refused: refused later");
+
+	const calls = guardCalls;
+	assert.equal(text(await h.call({ action: "create", subject: "x", metadata: { ns: "bad" } })), "Error: metadata.ns refused #3: bad");
+	assert.equal(guardCalls, calls, "a namespace refusal stops before the guards");
+	await h.call({ action: "list" });
+	await h.call({ action: "update", id: 1, status: "pending" }); // no change
+	assert.equal(guardCalls, calls, "reads and no-op updates run no guard");
+});
+
+test("a guard that times out or throws refuses the call", async () => {
+	const h = load({ guardTimeoutMs: 20 });
+	h.emit("todo:guard", { v: 1, id: "slow", check: () => new Promise(() => {}) });
+	const slow = await h.call({ action: "create", subject: "A" });
+	assert.equal(slow.isError, true);
+	assert.equal(text(slow), "Error: guard slow timed out after 20 ms");
+
+	h.emit("todo:guard", { v: 1, id: "slow", check: () => undefined }); // replaces by id
+	h.emit("todo:guard", {
+		v: 1,
+		id: "broken",
+		check: () => {
+			throw new Error("boom");
+		},
+	});
+	assert.equal(text(await h.call({ action: "create", subject: "A" })), "Error: guard broken refused: guard threw: boom");
+	assert.equal(snapshots(h.branch).length, 0);
+});
+
+// ---------------------------------------------------------------------------
 // Fields: points, anchor, evidence
 // ---------------------------------------------------------------------------
 

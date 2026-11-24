@@ -39,6 +39,7 @@ export function load(
 		before?: (h: Harness) => void;
 		/** Throw from `appendEntry` while this returns true. */
 		failAppend?: () => boolean;
+		guardTimeoutMs?: number;
 	} = {},
 ): Harness {
 	const bus = new EventEmitter();
@@ -50,6 +51,7 @@ export function load(
 
 	const ctx = {
 		hasUI: false,
+		cwd: "/work/project",
 		ui: { notify: () => {} },
 		sessionManager: { getSessionId: () => sessionId, getBranch: () => branch },
 	} as unknown as ExtensionContext;
@@ -114,9 +116,13 @@ export function load(
 	};
 
 	options.before?.(harness);
-	extension(pi, async () => {
-		throw new Error("overlay not loaded in tests");
-	});
+	extension(
+		pi,
+		async () => {
+			throw new Error("overlay not loaded in tests");
+		},
+		options.guardTimeoutMs === undefined ? {} : { guardTimeoutMs: options.guardTimeoutMs },
+	);
 	return harness;
 }
 

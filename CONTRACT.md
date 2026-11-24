@@ -1,6 +1,6 @@
 # Bookkeeping contract, version 1
 
-Other pi extensions read and check the todo list through three things: a snapshot entry on the session branch, a change event, and namespace validators.
+Other pi extensions read and check the todo list through four things: a snapshot entry on the session branch, a change event, namespace validators, and change guards.
 They depend on this document and on [`schema/todo-v1.schema.json`](schema/todo-v1.schema.json), never on this package's code, so they need no import from it and keep working when its internals change.
 
 Every payload carries `v: 1`.
@@ -132,6 +132,51 @@ Error: metadata.<ns> refused #<id>: <reason>
 
 `clear`, `list`, and `get` run no validators.
 Namespaces nobody registered pass unchecked.
+
+## 4. Change guards
+
+A namespace validator judges one task's value.
+An extension that must judge a call as a whole registers a guard instead: for example, one that refuses a task created without its namespace, compares a change with the list before it, or reads state outside the list.
+It registers by emitting `todo:guard`, and registers again on `todo:ready` as in [Namespaces](#3-namespaces):
+
+```ts
+const register = () =>
+  pi.events.emit("todo:guard", {
+    v: 1,
+    id: "train",
+    check: async (change) =>
+      change.op === "clear" && change.before.some((t) => t.status === "in_progress")
+        ? "steps are in progress; complete or void them first"
+        : undefined,
+  });
+```
+
+A later registration of the same `id` replaces the earlier one; the extension ignores, with a console warning, a payload whose `v` is not 1, whose `id` is empty, or whose `check` is not a function.
+
+The extension calls `check(change)` for every call that would change the list: `create` (a single task or a `tasks[]` batch, with or without metadata), an `update` that changes something, `delete`, and `clear`.
+`change` matches `$defs/change` in the schema and is a copy:
+
+| Property | Meaning |
+| --- | --- |
+| `op` | `"create"`, `"update"`, `"delete"`, or `"clear"`. |
+| `params` | The call's arguments as the tool received them. |
+| `before` | The whole list before the call, tombstones included. |
+| `after` | The whole list as the call would commit it. |
+| `sessionId` | The session that made the call. |
+| `cwd` | That session's working directory. |
+
+Guards run after the namespace validators and before anything commits, one at a time in registration order, and the extension awaits each.
+`check` returns, or resolves to, a non-empty string to refuse, or `undefined` to accept.
+The first refusal refuses the whole call as in [Namespaces](#3-namespaces): nothing commits, no entry is written, no event fires, and the tool returns an error result (`isError: true`):
+
+| Outcome | Tool result text |
+| --- | --- |
+| `check` returns or resolves to a reason | `Error: guard <id> refused: <reason>` |
+| `check` throws or rejects | `Error: guard <id> refused: guard threw: <message>` |
+| `check` takes longer than 10 seconds | `Error: guard <id> timed out after 10000 ms` |
+
+Reads, rejected calls, and updates that change nothing run no guard.
+One session's `todo` calls run one at a time, so a guard never sees a `before` that another call of the same session is about to change.
 
 ## Coexistence
 

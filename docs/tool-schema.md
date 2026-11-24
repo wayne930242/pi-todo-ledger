@@ -195,6 +195,7 @@ that it was a no-op instead of a fresh `Updated #N`.
 | `anchor must be a non-empty string` | Blank `anchor`. |
 | `evidence[N]: command must be a non-empty string` / `result must be "pass" or "fail"` / `sha must be a string` / `at must be an ISO 8601 time` / `at must not be in the future` | A malformed evidence item; `at` may lie at most five minutes after the call. |
 | `metadata.<ns> refused #N: <reason>` | A namespace validator refused the change (see [CONTRACT.md](../CONTRACT.md#3-namespaces)). |
+| `guard <id> refused: <reason>` / `guard <id> timed out after 10000 ms` | A change guard refused the call (see [CONTRACT.md](../CONTRACT.md#4-change-guards)). |
 | `illegal transition completed → in_progress` | Target status not reachable from the current one. |
 | `cannot block #N on itself` | `addBlockedBy` includes the task's own id. |
 | `addBlockedBy: #N not found` / `is deleted` | Unknown or tombstoned dependency. |
@@ -202,7 +203,7 @@ that it was a no-op instead of a fresh `Updated #N`.
 | `#N is already deleted` | `delete` on a tombstone. |
 
 Errors are returned in-band: `content` carries `Error: …` and `details.error`
-carries the bare message. Task state is unchanged. A namespace refusal is also
+carries the bare message. Task state is unchanged. A namespace or guard refusal is also
 flagged `isError: true`, so pi reports it to the model as a failed call; other
 rejections keep rpiv-todo's behaviour and are not flagged.
 

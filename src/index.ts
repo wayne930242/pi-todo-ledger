@@ -24,7 +24,16 @@
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
 import { COLLAPSE_KEY_OFF, resolveCollapseKey } from "./config.ts";
-import { CHANGED_EVENT, CONTRACT_VERSION, NAMESPACE_EVENT, READY_EVENT, toChangedEvent } from "./ledger/contract.ts";
+import {
+	CHANGED_EVENT,
+	CONTRACT_VERSION,
+	GUARD_EVENT,
+	GUARD_TIMEOUT_MS,
+	NAMESPACE_EVENT,
+	READY_EVENT,
+	toChangedEvent,
+} from "./ledger/contract.ts";
+import { GuardRegistry } from "./ledger/guards.ts";
 import { NamespaceRegistry } from "./ledger/namespaces.ts";
 import { I18N_NAMESPACE } from "./state/i18n-bridge.ts";
 import { replayFromBranch } from "./state/replay.ts";
@@ -133,7 +142,16 @@ function formatError(e: unknown): string {
 	return e instanceof Error ? e.message : String(e);
 }
 
-export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = () => import("./todo-overlay.ts")) {
+export interface LedgerOptions {
+	/** How long a change guard may take; tests shorten it. */
+	guardTimeoutMs?: number;
+}
+
+export default function (
+	pi: ExtensionAPI,
+	importOverlay: TodoOverlayImporter = () => import("./todo-overlay.ts"),
+	options: LedgerOptions = {},
+) {
 	let todoOverlay: TodoOverlay | undefined;
 	const loadTodoOverlay = makeTodoOverlayLoader(importOverlay);
 	let uiCtx: ExtensionUIContext | undefined;
@@ -155,15 +173,20 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		todoOverlay.update();
 	}
 
-	// Namespace owners register on `todo:namespace`; `todo:ready` asks the ones
-	// that loaded before this extension to register again.
+	// Namespace and guard owners register on `todo:namespace` and `todo:guard`;
+	// `todo:ready` asks the ones that loaded before this extension to register again.
 	const namespaces = new NamespaceRegistry();
+	const guards = new GuardRegistry(options.guardTimeoutMs ?? GUARD_TIMEOUT_MS);
 	pi.events.on(NAMESPACE_EVENT, (payload) => {
 		const ignored = namespaces.register(payload);
 		if (ignored) console.warn(`[pi-todo-ledger] ignored ${ignored}`);
 	});
+	pi.events.on(GUARD_EVENT, (payload) => {
+		const ignored = guards.register(payload);
+		if (ignored) console.warn(`[pi-todo-ledger] ignored ${ignored}`);
+	});
 
-	registerTodoTool(pi, namespaces);
+	registerTodoTool(pi, namespaces, guards);
 	registerTodosCommand(pi);
 	pi.events.emit(READY_EVENT, { v: CONTRACT_VERSION });
 

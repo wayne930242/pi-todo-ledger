@@ -21,9 +21,12 @@ export const CHANGED_EVENT = "todo:changed";
 /** Emitted by other extensions on `pi.events` to register a metadata namespace validator. */
 export const NAMESPACE_EVENT = "todo:namespace";
 
+/** Emitted by other extensions on `pi.events` to register a change guard. */
+export const GUARD_EVENT = "todo:guard";
+
 /**
- * Emitted by this extension on `pi.events` when it loads, so namespace owners
- * that loaded first register again.
+ * Emitted by this extension on `pi.events` when it loads, so namespace and
+ * guard owners that loaded first register again.
  */
 export const READY_EVENT = "todo:ready";
 
@@ -62,6 +65,35 @@ export interface TodoNamespaceEventV1 {
 	ns: string;
 	validate: NamespaceValidator;
 }
+
+/** The `todo` actions that change the list, i.e. the calls a guard sees. */
+export type GuardOp = "create" | "update" | "delete" | "clear";
+
+/** What a guard is asked to judge: one call that would change the list. */
+export interface TodoChangeV1 {
+	op: GuardOp;
+	/** The call's arguments, as the tool received them. */
+	params: Record<string, unknown>;
+	/** The whole list before the call. */
+	before: Task[];
+	/** The whole list as the call would commit it. */
+	after: Task[];
+	sessionId: string;
+	cwd: string;
+}
+
+/** Returns, or resolves to, a refusal reason, or `undefined` to accept. */
+export type GuardCheck = (change: TodoChangeV1) => string | undefined | Promise<string | undefined>;
+
+/** Payload of `todo:guard`. */
+export interface TodoGuardEventV1 {
+	v: 1;
+	id: string;
+	check: GuardCheck;
+}
+
+/** How long a guard may take before its call is refused. */
+export const GUARD_TIMEOUT_MS = 10_000;
 
 /** Deep copy so listeners and entries never alias the live store. */
 export function copyTasks(tasks: readonly Task[]): Task[] {

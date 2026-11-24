@@ -7,6 +7,7 @@ On top of them it publishes a bookkeeping contract, [CONTRACT.md](CONTRACT.md):
 - **Snapshot entry.** Every change appends a `todo/v1` entry with the whole list to the session branch. Its shape is fixed by [`schema/todo-v1.schema.json`](schema/todo-v1.schema.json).
 - **Change event.** `todo:changed` on `pi.events` carries `{ v: 1, sessionId, tasks }` after every change and when a session's list is restored.
 - **Namespace validators.** An extension that owns `metadata.<ns>` registers a validator with `todo:namespace`; the tool runs it before committing and returns its refusal as a tool error.
+- **Change guards.** An extension that must approve whole calls (including creates without metadata, batches, deletes, and `clear`) registers an async guard with `todo:guard`; the tool awaits it before committing.
 - **Bookkeeping fields.** Tasks gain `points` (effort, 0 to 10), `anchor` (the check that shows the task is done), and `evidence` (an append-only list of check runs, each `{ command, sha?, result, at }`).
 
 ## Replaces rpiv-todo
@@ -57,7 +58,7 @@ function currentTasks(ctx: ExtensionContext) {
 }
 ```
 
-[CONTRACT.md](CONTRACT.md) describes when each fires, how validators register, and what a refusal looks like.
+[CONTRACT.md](CONTRACT.md) describes when each fires, how validators and guards register, and what a refusal looks like.
 
 ## Configuration
 
