@@ -1,0 +1,60 @@
+{
+  "name": "pi-todo-ledger",
+  "version": "0.1.0",
+  "description": "A todo list for pi agents with a public bookkeeping contract: snapshot entries, change events, and namespace validators. Fork of @juicesharp/rpiv-todo",
+  "type": "module",
+  "license": "MIT",
+  "author": "wayne930242",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wayne930242/pi-todo-ledger.git"
+  },
+  "homepage": "https://github.com/wayne930242/pi-todo-ledger#readme",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "extension",
+    "todo",
+    "tasks",
+    "ledger"
+  ],
+  "files": [
+    "src",
+    "schema",
+    "docs",
+    "CONTRACT.md",
+    "README.md",
+    "NOTICE",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --test --test-force-exit tests/*.test.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "@juicesharp/rpiv-i18n": "*",
+    "typebox": "*"
+  },
+  "peerDependenciesMeta": {
+    "@juicesharp/rpiv-i18n": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "1.6.0",
+    "@earendil-works/pi-coding-agent": "1.6.0",
+    "@earendil-works/pi-tui": "1.6.0",
+    "@types/node": "26.6.6",
+    "typebox": "1.4.7",
+    "typescript": "7.0.2"
+  }
+}

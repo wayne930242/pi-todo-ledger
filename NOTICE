@@ -1,0 +1,13 @@
+pi-todo-ledger
+Copyright (c) 2026 wayne930242
+
+This package is a fork of @juicesharp/rpiv-todo 2.15.0
+(https://github.com/juicesharp/rpiv-mono, packages/rpiv-todo),
+Copyright (c) 2026 juicesharp, released under the MIT License.
+
+The fork keeps rpiv-todo's `todo` tool, `/todos` command, and overlay, and adds
+the bookkeeping contract described in CONTRACT.md: the `todo/v1` snapshot
+entry, the `todo:changed` event, metadata namespace validators, and the
+`points`, `anchor`, and `evidence` task fields. Configuration helpers formerly
+imported from @juicesharp/rpiv-config 2.15.0 (MIT, same copyright holder) are
+vendored in src/config.ts.
