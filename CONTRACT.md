@@ -169,7 +169,7 @@ A valid `update` that changes nothing, such as setting `in_progress` on a task a
 | `params` | The call's arguments as the tool received them. |
 | `before` | The whole list before the call, tombstones included. |
 | `after` | The whole list as the call would commit it. |
-| `sessionId` | The session that made the call. |
+| `sessionId` | The session that made the call. It does not say which branch of the session is current; a guard that needs the branch keeps its own map from session id to the latest context it saw (for example from `session_start` and `session_tree`). |
 | `cwd` | That session's working directory. |
 | `noop` | `true` on an `update` that changes nothing, where `before` equals `after`; absent otherwise. |
 
@@ -182,6 +182,9 @@ The first refusal refuses the whole call as in [Namespaces](#3-namespaces): noth
 | `check` returns or resolves to a reason | `Error: guard <id> refused: <reason>` |
 | `check` throws or rejects | `Error: guard <id> refused: guard threw: <message>` |
 | `check` takes longer than 10 seconds | `Error: guard <id> timed out after 10000 ms` |
+
+The time limit stops waiting on an asynchronous guard at 10 seconds.
+It cannot interrupt a synchronous guard, which holds the event loop until it returns; the extension measures how long it took and refuses the call with the same timeout error if it ran past the limit.
 
 An accepted `noop` update writes no entry and emits no event; a refused one returns the refusal like any other call.
 Reads (`list`, `get`) and calls the tool rejects run no guard.
