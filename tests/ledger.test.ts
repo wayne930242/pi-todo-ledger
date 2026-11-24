@@ -572,6 +572,23 @@ test("a guard chain that comes back to a session on it is refused at once", asyn
 	);
 });
 
+test("a no-op update aborted during its guards reports the abort", async () => {
+	const h = load();
+	await h.call({ action: "create", subject: "A" });
+	const controller = new AbortController();
+	h.emit("todo:guard", {
+		v: 1,
+		id: "aborts",
+		check: () => {
+			controller.abort();
+			return undefined;
+		},
+	});
+	const result = await h.call({ action: "update", id: 1, status: "pending" }, controller.signal);
+	assert.equal(result.isError, true);
+	assert.equal(text(result), "Error: call aborted; nothing changed");
+});
+
 test("an aborted call never commits, whether aborted in the queue or during its guards", async () => {
 	const h = load();
 	let release: () => void = () => {};

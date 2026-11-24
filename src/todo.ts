@@ -124,6 +124,7 @@ export function registerTodoTool(pi: ExtensionAPI, namespaces: NamespaceRegistry
 					if (result.op.kind === "update") {
 						const refusal = await guards.check({ ...guardChange, noop: true });
 						if (refusal) return refuse(action, input, before, refusal);
+						if (signal?.aborted) return refuse(action, input, before, ABORTED);
 					}
 					commitState(sessionId, result.state);
 					return buildToolResult(action, input, result.state, result.op);

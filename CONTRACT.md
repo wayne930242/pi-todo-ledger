@@ -192,7 +192,7 @@ One session's `todo` calls run one at a time, so a guard never sees a `before` t
 A guard reads the list from `change.before` and `change.after` and never calls the `todo` tool for the session it is judging: such a call is refused at once with `Error: todo called from inside guard <id>`, and changes nothing.
 The same holds along a chain of guards: when session A's guard calls `todo` for session B, and B's guard calls `todo` for A, the call for A is refused the same way, naming A's guard.
 Calling `todo` for a session whose guard is not running further up the chain is allowed.
-A call aborted (through the tool's abort signal) while it waits for an earlier call or while its guards run commits nothing and returns `Error: call aborted; nothing changed`.
+A call aborted (through the tool's abort signal) while it waits for an earlier call or while its guards run commits nothing and returns `Error: call aborted; nothing changed`, a `noop` update included.
 
 ## Coexistence
 
