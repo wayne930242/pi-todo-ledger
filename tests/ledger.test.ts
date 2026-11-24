@@ -67,6 +67,29 @@ test("replay prefers the newest valid todo/v1 entry over rpiv records and skips 
 	assert.deepEqual(state, { tasks: [v1Task], nextId: 2 });
 });
 
+test("replay skips every todo/v1 snapshot the JSON schema rejects", () => {
+	const good = { v: 1, tasks: [{ id: 1, subject: "Good", status: "pending" }], nextId: 2 };
+	const task = good.tasks[0];
+	const bad = [
+		{ ...good, tasks: [{ ...task, id: 0 }] },
+		{ ...good, nextId: 0 },
+		{ ...good, tasks: [{ ...task, metadata: [] }] },
+		{ ...good, tasks: [{ ...task, anchor: "" }] },
+		{ ...good, tasks: [{ ...task, evidence: [{ command: "", result: "pass", at: "2026-11-24T00:00:00.000Z" }] }] },
+		{ ...good, tasks: [{ ...task, blockedBy: [0] }] },
+	];
+	for (const snapshot of bad) {
+		assert.notDeepEqual(snapshotSchema.errors(snapshot), [], `schema rejects ${JSON.stringify(snapshot)}`);
+		const state = replayFromBranch(
+			branchOf([
+				{ type: "custom", customType: "todo/v1", data: good },
+				{ type: "custom", customType: "todo/v1", data: snapshot },
+			]),
+		);
+		assert.deepEqual(state, { tasks: good.tasks, nextId: 2 }, JSON.stringify(snapshot));
+	}
+});
+
 test("a session started under rpiv-todo keeps its list and continues in todo/v1", async () => {
 	const h = load({
 		branch: [

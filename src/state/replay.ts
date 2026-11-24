@@ -1,32 +1,12 @@
 import { SNAPSHOT_ENTRY_TYPE } from "../ledger/contract.ts";
-import {
-	LEGACY_STATE_ENTRY_TYPE,
-	POINTS_MAX,
-	POINTS_MIN,
-	type Task,
-	type TaskDetails,
-	type TaskStatus,
-	TOOL_NAME,
-} from "../tool/types.ts";
+import { isSnapshotV1 } from "../ledger/schema.ts";
+import { LEGACY_STATE_ENTRY_TYPE, type Task, type TaskDetails, type TaskStatus, TOOL_NAME } from "../tool/types.ts";
 import { EMPTY_STATE, type TaskState } from "./state.ts";
 
 const TASK_STATUSES: ReadonlySet<unknown> = new Set<TaskStatus>(["pending", "in_progress", "completed", "deleted"]);
 
 const optional = (value: unknown, valid: (v: unknown) => boolean): boolean => value === undefined || valid(value);
 const isString = (v: unknown): boolean => typeof v === "string";
-const isPoints = (v: unknown): boolean =>
-	typeof v === "number" && Number.isFinite(v) && v >= POINTS_MIN && v <= POINTS_MAX;
-
-function isEvidence(value: unknown): boolean {
-	if (!value || typeof value !== "object") return false;
-	const e = value as Record<string, unknown>;
-	return (
-		typeof e.command === "string" &&
-		(e.result === "pass" || e.result === "fail") &&
-		typeof e.at === "string" &&
-		optional(e.sha, isString)
-	);
-}
 
 function isTask(value: unknown): value is Task {
 	if (!value || typeof value !== "object") return false;
@@ -39,16 +19,15 @@ function isTask(value: unknown): value is Task {
 		optional(t.activeForm, isString) &&
 		optional(t.owner, isString) &&
 		optional(t.blockedBy, (v) => Array.isArray(v) && v.every((id) => Number.isSafeInteger(id))) &&
-		optional(t.metadata, (v) => typeof v === "object" && v !== null) &&
-		optional(t.points, isPoints) &&
-		optional(t.anchor, isString) &&
-		optional(t.evidence, (v) => Array.isArray(v) && v.every(isEvidence))
+		optional(t.metadata, (v) => typeof v === "object" && v !== null)
 	);
 }
 
 /**
- * Discriminator for `details` envelopes that match the persisted `TaskDetails`
- * shape, down to every task. Defensive — a snapshot from an older or corrupt
+ * Legacy records only (`rpiv-todo-state` entries and `todo` tool results), with
+ * rpiv-todo's own rules; `todo/v1` data is checked against the published schema
+ * by `isSnapshotV1`. Discriminator for `details` envelopes that match the
+ * persisted `TaskDetails` shape, down to every task. Defensive — a snapshot from an older or corrupt
  * session (e.g. a `tasks[]` another extension truncated with a marker string)
  * is skipped whole, so replay keeps the last valid one.
  */
@@ -56,11 +35,6 @@ export function isTaskDetails(value: unknown): value is TaskDetails {
 	if (!value || typeof value !== "object") return false;
 	const v = value as Record<string, unknown>;
 	return Array.isArray(v.tasks) && v.tasks.every(isTask) && Number.isSafeInteger(v.nextId);
-}
-
-/** A `todo/v1` entry's data (CONTRACT.md): `{ v: 1, tasks, nextId }`. */
-export function isSnapshotV1(value: unknown): value is { v: 1; tasks: Task[]; nextId: number } {
-	return isTaskDetails(value) && (value as unknown as { v?: unknown }).v === 1;
 }
 
 /** Fresh `TaskState` from a persisted snapshot — deep-copies the tasks so replay never aliases branch data. */
