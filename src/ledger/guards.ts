@@ -58,9 +58,14 @@ export class GuardRegistry {
 		const timedOut = new Promise<typeof TIMED_OUT>((resolve) => {
 			timer = setTimeout(() => resolve(TIMED_OUT), this.timeoutMs);
 		});
+		const timedOutMessage = `guard ${id} timed out after ${this.timeoutMs} ms`;
+		const started = performance.now();
 		try {
 			const reason = await Promise.race([Promise.resolve().then(() => check(structuredClone(change))), timedOut]);
-			if (reason === TIMED_OUT) return `guard ${id} timed out after ${this.timeoutMs} ms`;
+			if (reason === TIMED_OUT) return timedOutMessage;
+			// The timer cannot interrupt a guard that blocks the event loop; measure instead, so a
+			// guard that answered after the limit is refused like one that never answered.
+			if (performance.now() - started > this.timeoutMs) return timedOutMessage;
 			return typeof reason === "string" && reason.length > 0 ? `guard ${id} refused: ${reason}` : undefined;
 		} catch (error) {
 			return `guard ${id} refused: guard threw: ${error instanceof Error ? error.message : String(error)}`;

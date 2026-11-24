@@ -448,6 +448,22 @@ test("a guard that times out or throws refuses the call", async () => {
 	assert.equal(snapshots(h.branch).length, 0);
 });
 
+test("a synchronous guard that runs past the limit is refused once it returns", async () => {
+	const h = load({ guardTimeoutMs: 20 });
+	h.emit("todo:guard", {
+		v: 1,
+		id: "busy",
+		check: () => {
+			const end = Date.now() + 40;
+			while (Date.now() < end) {}
+			return undefined;
+		},
+	});
+	const result = await h.call({ action: "create", subject: "A" });
+	assert.equal(text(result), "Error: guard busy timed out after 20 ms");
+	assert.equal(snapshots(h.branch).length, 0);
+});
+
 test("a guard whose reason is the word timeout is a refusal, not a timeout", async () => {
 	const h = load({ guardTimeoutMs: 1000 });
 	h.emit("todo:guard", { v: 1, id: "literal", check: async () => "timeout" });
