@@ -99,8 +99,10 @@ export function buildToolResult(
 	const text = formatContent(op, state);
 	const details: TaskDetails = {
 		action,
-		params: params as Record<string, unknown>,
-		tasks: state.tasks,
+		params: structuredClone(params) as Record<string, unknown>,
+		// An independent copy: callers (renderers, scripts, other extensions) may hold or
+		// change `details`, and must not reach the live store through it.
+		tasks: structuredClone(state.tasks),
 		nextId: state.nextId,
 		...(op.kind === "error" ? { error: op.message } : {}),
 	};

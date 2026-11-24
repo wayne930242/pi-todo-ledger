@@ -139,6 +139,17 @@ test("todo/v1 snapshots match the schema and replay to the same list in a new se
 	assert.match(text(got), /evidence: fail npm test \(2026-11-24T08:00:00\.000Z\)/);
 });
 
+test("tool result details do not alias live state", async () => {
+	const h = load();
+	const created = await h.call({ action: "create", subject: "Original", metadata: { k: 1 } });
+	const details = created.details as { tasks: Array<{ subject: string; metadata: { k: number } }> };
+	details.tasks[0]!.subject = "mutated";
+	details.tasks[0]!.metadata.k = 2;
+	const got = await h.call({ action: "get", id: 1 });
+	assert.match(text(got), /Original/);
+	assert.deepEqual((got.details as { tasks: Array<{ metadata: unknown }> }).tasks[0]?.metadata, { k: 1 });
+});
+
 test("snapshot entries do not alias live state", async () => {
 	const h = load();
 	await h.call({ action: "create", subject: "A", metadata: { k: 1 } });
