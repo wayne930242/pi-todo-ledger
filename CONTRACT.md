@@ -33,11 +33,17 @@ An evidence entry is `{ command, sha?, result, at }`:
 | `command` | non-empty string | The check that ran. |
 | `sha` | string, optional | Revision the check ran on, such as a git commit SHA. |
 | `result` | `pass` or `fail` | How the run ended. |
-| `at` | string | ISO 8601 time of the run in UTC, as `Date.prototype.toISOString` writes it. The tool converts the caller's time to that form, and fills in the call time when the caller leaves it out. |
+| `at` | string | ISO 8601 time of the run in UTC, as `Date.prototype.toISOString` writes it. The tool converts the caller's time to that form, fills in the call time when the caller leaves it out, and rejects a time more than five minutes after the call. |
 
 `evidence` is append-only.
 A `todo` `update` call adds its `evidence` items after the existing ones, and no call removes or rewrites an entry; only `clear`, which empties the whole list, drops them.
 `points` and `anchor` are replaced by an update that sets them, and cannot be removed.
+
+> [!IMPORTANT]
+> Evidence is self-reported bookkeeping, not proof.
+> The agent writes each entry through the `todo` tool; the extension checks its shape and that `at` is not in the future, but runs nothing and cannot tell whether the command ran or how it ended.
+> Use it to find which checks were run and on which revision, so the next round can reuse a green run.
+> A consumer that judges whether a check passed after the last change, such as a guard that blocks closing a task, keeps the session's real tool results (the command's own output on the branch) as the source of truth and treats evidence only as a pointer to them.
 
 The agent sets these fields through the `todo` tool's `points`, `anchor`, and `evidence` parameters on `create` (also on each `tasks[]` item) and `update`.
 

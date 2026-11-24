@@ -77,7 +77,10 @@ const BATCH_ITEM_FIELDS = [
  * update. Pi validates tool arguments against the schema first; these checks also
  * cover callers that reach the reducer without that validation.
  */
-function validateLedgerFields(spec: TaskMutationParams): string | undefined {
+/** How far ahead of the call time an evidence `at` may lie, for clock skew between machines. */
+export const EVIDENCE_FUTURE_TOLERANCE_MS = 5 * 60_000;
+
+function validateLedgerFields(spec: TaskMutationParams, now: string): string | undefined {
 	if (spec.points !== undefined) {
 		const p = spec.points;
 		if (typeof p !== "number" || !Number.isFinite(p) || p < POINTS_MIN || p > POINTS_MAX) {
@@ -90,14 +93,14 @@ function validateLedgerFields(spec: TaskMutationParams): string | undefined {
 	if (spec.evidence !== undefined) {
 		if (!Array.isArray(spec.evidence)) return "evidence must be a list";
 		for (let i = 0; i < spec.evidence.length; i++) {
-			const error = validateEvidenceInput(spec.evidence[i]);
+			const error = validateEvidenceInput(spec.evidence[i], now);
 			if (error) return `evidence[${i}]: ${error}`;
 		}
 	}
 	return undefined;
 }
 
-function validateEvidenceInput(value: unknown): string | undefined {
+function validateEvidenceInput(value: unknown, now: string): string | undefined {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return "must be an object";
 	const e = value as Record<string, unknown>;
 	if (typeof e.command !== "string" || !e.command.trim()) return "command must be a non-empty string";
@@ -105,6 +108,9 @@ function validateEvidenceInput(value: unknown): string | undefined {
 	if (e.sha !== undefined && typeof e.sha !== "string") return "sha must be a string";
 	if (e.at !== undefined && (typeof e.at !== "string" || Number.isNaN(Date.parse(e.at)))) {
 		return "at must be an ISO 8601 time";
+	}
+	if (e.at !== undefined && Date.parse(e.at as string) > Date.parse(now) + EVIDENCE_FUTURE_TOLERANCE_MS) {
+		return "at must not be in the future";
 	}
 	return undefined;
 }
@@ -237,7 +243,7 @@ export function applyTaskMutation(
 					if (!spec || !subject?.trim()) {
 						return errorResult(state, `tasks[${i}]: subject required for create`);
 					}
-					const ledgerError = validateLedgerFields(spec);
+					const ledgerError = validateLedgerFields(spec, now);
 					if (ledgerError) return errorResult(state, `tasks[${i}]: ${ledgerError}`);
 					items.push({ spec, subject });
 				}
@@ -258,7 +264,7 @@ export function applyTaskMutation(
 			if (!params.subject?.trim()) {
 				return errorResult(state, "subject required for create");
 			}
-			const ledgerError = validateLedgerFields(params);
+			const ledgerError = validateLedgerFields(params, now);
 			if (ledgerError) return errorResult(state, ledgerError);
 			const blockedError = validateCreateBlockedBy(state, params.blockedBy, new Set());
 			if (blockedError) return errorResult(state, blockedError);
@@ -292,7 +298,7 @@ export function applyTaskMutation(
 					state,
 					"update requires at least one mutable field: subject, description, activeForm, status, owner, metadata, points, anchor, evidence, addBlockedBy, or removeBlockedBy",
 				);
-			const ledgerError = validateLedgerFields(params);
+			const ledgerError = validateLedgerFields(params, now);
 			if (ledgerError) return errorResult(state, ledgerError);
 
 			let newStatus = current.status;

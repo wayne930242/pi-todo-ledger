@@ -193,7 +193,7 @@ that it was a no-op instead of a fresh `Updated #N`.
 | `update requires at least one mutable field: subject, description, activeForm, status, owner, metadata, points, anchor, evidence, addBlockedBy, or removeBlockedBy` | `update` with only an `id`. |
 | `points must be a number from 0 to 10` | `points` out of range; prefixed `tasks[N]: ` for a batch item. |
 | `anchor must be a non-empty string` | Blank `anchor`. |
-| `evidence[N]: command must be a non-empty string` / `result must be "pass" or "fail"` / `sha must be a string` / `at must be an ISO 8601 time` | A malformed evidence item. |
+| `evidence[N]: command must be a non-empty string` / `result must be "pass" or "fail"` / `sha must be a string` / `at must be an ISO 8601 time` / `at must not be in the future` | A malformed evidence item; `at` may lie at most five minutes after the call. |
 | `metadata.<ns> refused #N: <reason>` | A namespace validator refused the change (see [CONTRACT.md](../CONTRACT.md#3-namespaces)). |
 | `illegal transition completed → in_progress` | Target status not reachable from the current one. |
 | `cannot block #N on itself` | `addBlockedBy` includes the task's own id. |

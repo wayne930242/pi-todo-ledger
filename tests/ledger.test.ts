@@ -121,7 +121,7 @@ test("todo/v1 snapshots match the schema and replay to the same list in a new se
 		anchor: "npm test",
 		blockedBy: undefined,
 		metadata: { team: { lane: "a" } },
-		evidence: [{ command: "npm test", result: "fail", at: "2026-11-24T08:00:00.000Z" }],
+		evidence: [{ command: "npm test", result: "fail", at: "2026-11-23T08:00:00.000Z" }],
 	});
 	await h.call({ action: "create", tasks: [{ subject: "Second", owner: "w2", points: 0 }, { subject: "Third" }] });
 	await h.call({ action: "update", id: 3, addBlockedBy: [1], status: "in_progress", activeForm: "waiting" });
@@ -144,7 +144,7 @@ test("todo/v1 snapshots match the schema and replay to the same list in a new se
 				metadata: { team: { lane: "a" } },
 				points: 1.5,
 				anchor: "npm test",
-				evidence: [{ command: "npm test", result: "fail", at: "2026-11-24T08:00:00.000Z" }],
+				evidence: [{ command: "npm test", result: "fail", at: "2026-11-23T08:00:00.000Z" }],
 			},
 			{ id: 2, subject: "Second", status: "deleted", owner: "w2", points: 0 },
 			{ id: 3, subject: "Third", status: "in_progress", activeForm: "waiting", blockedBy: [1] },
@@ -159,7 +159,7 @@ test("todo/v1 snapshots match the schema and replay to the same list in a new se
 	const got = await next.call({ action: "get", id: 1 });
 	assert.match(text(got), /points: 1\.5/);
 	assert.match(text(got), /anchor: npm test/);
-	assert.match(text(got), /evidence: fail npm test \(2026-11-24T08:00:00\.000Z\)/);
+	assert.match(text(got), /evidence: fail npm test \(2026-11-23T08:00:00\.000Z\)/);
 });
 
 test("tool result details do not alias live state", async () => {
@@ -359,7 +359,7 @@ test("evidence appends on update, oldest first, and at defaults to the call time
 		action: "update",
 		id: 1,
 		points: 2,
-		evidence: [{ command: "npm test -- bug", sha: "abc1234", result: "pass", at: "2026-11-24T17:00:00+08:00" }],
+		evidence: [{ command: "npm test -- bug", sha: "abc1234", result: "pass", at: "2026-11-23T17:00:00+08:00" }],
 	});
 	const task = snapshots(h.branch).at(-1)?.tasks[0] as { evidence: Array<Record<string, string>>; points: number };
 	assert.equal(task.points, 2);
@@ -368,7 +368,7 @@ test("evidence appends on update, oldest first, and at defaults to the call time
 	assert.ok(Date.parse(task.evidence[0]?.at ?? "") >= before - 1000, "at defaults to now");
 	assert.deepEqual(
 		task.evidence[1],
-		{ command: "npm test -- bug", sha: "abc1234", result: "pass", at: "2026-11-24T09:00:00.000Z" },
+		{ command: "npm test -- bug", sha: "abc1234", result: "pass", at: "2026-11-23T09:00:00.000Z" },
 		"at is normalized to UTC",
 	);
 
@@ -394,10 +394,21 @@ test("invalid ledger fields are rejected before anything changes", async () => {
 			"Error: evidence[0]: at must be an ISO 8601 time",
 		],
 		[{ action: "create", tasks: [{ subject: "B", points: -1 }] }, "Error: tasks[0]: points must be a number from 0 to 10"],
+		[
+			{
+				action: "update",
+				id: 1,
+				evidence: [{ command: "npm test", result: "pass", at: new Date(Date.now() + 6 * 60_000).toISOString() }],
+			},
+			"Error: evidence[0]: at must not be in the future",
+		],
 		[{ action: "create", tasks: [{ subject: "B" }], anchor: "x" }, "Error: create with tasks[] takes anchor on each item, not at the top level"],
 	];
 	for (const [params, expected] of cases) assert.equal(text(await h.call(params)), expected);
 	assert.equal(snapshots(h.branch).length, 1);
 	assert.equal(text(await h.call({ action: "update", id: 1, points: 0 })), "Updated #1");
 	assert.match(text(await h.call({ action: "update", id: 1, points: 0 })), /^No change/);
+	// Clock skew up to five minutes is accepted.
+	const soon = new Date(Date.now() + 4 * 60_000).toISOString();
+	assert.equal(text(await h.call({ action: "update", id: 1, evidence: [{ command: "x", result: "pass", at: soon }] })), "Updated #1");
 });
