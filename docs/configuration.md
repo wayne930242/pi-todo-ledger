@@ -1,31 +1,29 @@
 # Configuration reference
 
-Every option
-[`@juicesharp/rpiv-todo`](https://www.npmjs.com/package/@juicesharp/rpiv-todo)
-reads, where the file lives, and exactly what happens when a value is wrong.
+Every option pi-todo-ledger reads, where the file lives, and exactly what
+happens when a value is wrong.
 
 ## Where the file lives
 
-The config file is optional. It is resolved in this order:
+The config file is optional. The extension reads the first of these files that
+exists:
 
-1. `$XDG_CONFIG_HOME/rpiv-todo/config.json` — used when `XDG_CONFIG_HOME` is set
+1. `$XDG_CONFIG_HOME/pi-todo-ledger/config.json`, when `XDG_CONFIG_HOME` is set
    to an absolute path. A bare `~` or a leading `~/` is expanded first; a `~user`
-   form is not expanded and therefore falls through.
-2. `~/.config/rpiv-todo/config.json` — used when `XDG_CONFIG_HOME` is unset,
-   empty, whitespace-only, or relative.
-3. If the XDG file does not exist, the legacy `~/.config/rpiv-todo/config.json`
-   is read anyway, so a pre-XDG file is still found after you set
-   `XDG_CONFIG_HOME`. This fallback is one-way: if the XDG file exists but is
-   malformed, you get a warning and defaults — it does **not** quietly read the
-   legacy file instead.
+   form is not expanded, so the variable is ignored.
+2. `~/.config/pi-todo-ledger/config.json`.
+3. `$XDG_CONFIG_HOME/rpiv-todo/config.json`, then `~/.config/rpiv-todo/config.json`:
+   rpiv-todo's file, so settings carry over from rpiv-todo until you create a
+   `pi-todo-ledger` one.
 
-Both files missing means every default applies. Malformed JSON prints a
-`rpiv-config: invalid JSON at …` warning and is treated as `{}`. A JSON array or
-a non-object value (`null`, a string, a number, a boolean) is silently treated as
-`{}` — no warning.
+The first existing file wins even when it is malformed: you get a warning and
+defaults, and the extension does **not** quietly read the next file instead.
+No file means every default applies. Malformed JSON prints a
+`pi-todo-ledger: invalid JSON at …` warning, and a JSON array or another
+non-object value (`null`, a string, a number, a boolean) prints a
+`… is not a JSON object` warning; both are treated as `{}`.
 
-`rpiv-todo` never writes this file — you create and edit it yourself, and the
-extension only reads it.
+The extension never writes this file — you create and edit it yourself.
 
 ## Example
 
@@ -104,7 +102,7 @@ guideline bullets are used.
 | `XDG_CONFIG_HOME` | Relocates the config directory, as described above. |
 | `HOME` | Anchors `~/.config` when `XDG_CONFIG_HOME` does not apply. |
 
-`rpiv-todo` reads no environment variables of its own. If you have
+pi-todo-ledger reads no environment variables of its own. If you have
 [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n)
 installed, that package has its own locale configuration and its own env-var
 chain — see its README.

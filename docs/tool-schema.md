@@ -1,8 +1,8 @@
 # `todo` tool reference
 
 Complete parameter schema, status machine, response envelope, and error strings
-for the `todo` tool registered by
-[`@juicesharp/rpiv-todo`](https://www.npmjs.com/package/@juicesharp/rpiv-todo).
+for the `todo` tool registered by pi-todo-ledger. The actions and parameters are
+rpiv-todo's, plus the bookkeeping fields `points`, `anchor`, and `evidence`.
 
 ## Actions
 
@@ -31,6 +31,9 @@ todo({
     blockedBy?: number[],             // existing ids only; no sibling refs
     owner?: string,
     metadata?: Record<string, unknown>,
+    points?: number,
+    anchor?: string,
+    evidence?: Evidence[],
   }>,
 
   // create + update
@@ -38,6 +41,14 @@ todo({
   activeForm?: string,                // present-continuous label shown while in_progress
   owner?: string,                     // agent/owner assigned to this task
   metadata?: Record<string, unknown>, // on update, a null value deletes that key
+  points?: number,                    // effort, 0 to 10; update replaces
+  anchor?: string,                    // the check that shows the task is done; update replaces
+  evidence?: Array<{                  // check runs; update appends, never replaces
+    command: string,
+    sha?: string,                     // revision the check ran on
+    result: "pass" | "fail",
+    at?: string,                      // ISO 8601; stored in UTC; defaults to the time of the call
+  }>,
 
   // update-only
   addBlockedBy?: number[],            // additive merge into blockedBy
@@ -56,7 +67,8 @@ todo({
 
 `create` takes either `subject` (one task) or `tasks[]` (several independent
 tasks). Passing both is rejected, even with a blank `subject`. Each item carries
-its own `description`, `activeForm`, `blockedBy`, `owner` and `metadata`; the same
+its own `description`, `activeForm`, `blockedBy`, `owner`, `metadata`, `points`,
+`anchor` and `evidence`; the same
 fields at the top level of a batch are rejected rather than dropped. The batch is validated first and committed
 together: one bad item fails the whole call and leaves the list unchanged.
 Items in `tasks[]` cannot `blockedBy` each other; those ids do not exist until
@@ -67,6 +79,11 @@ the call commits. Create the prerequisite first, then the dependent with
 for a key removes it, and emptying the record drops the field entirely.
 `addBlockedBy` and `removeBlockedBy` are additive — do not resend the whole
 array.
+
+`update` replaces `points` and `anchor` and appends `evidence` items after the
+existing ones. No call removes an evidence entry or a field once set; `points: 0`
+is the lowest estimate. Pi drops a `null` passed for an optional parameter before
+the tool sees it, so `points: null` changes nothing.
 
 ## Status transitions
 
@@ -111,6 +128,9 @@ tasks' `blockedBy` arrays.
       blockedBy?: number[],
       owner?: string,
       metadata?: Record<string, unknown>,
+      points?: number,
+      anchor?: string,
+      evidence?: Array<{ command: string, sha?: string, result: "pass" | "fail", at: string }>,
     }>,
     nextId: number,
     error?: string,                          // present only on a rejected call
@@ -120,20 +140,22 @@ tasks' `blockedBy` arrays.
 
 ## Persistence
 
-`details` is the persistence format. Every successful call embeds the complete
-post-mutation snapshot. Every call that changes the list (`create`, `delete`,
-`clear`, or an `update` that changed something) also saves the same `details`
-object as a `rpiv-todo-state` custom entry on the session branch. Custom entries
-are never sent to the model.
+Every call that changes the list (`create`, `delete`, `clear`, or an `update`
+that changed something) appends a `todo/v1` custom entry holding the whole list
+to the session branch, and emits `todo:changed`. Both are part of the public
+contract in [CONTRACT.md](../CONTRACT.md). Custom entries are never sent to the
+model. The tool result's `details` still embeds the complete post-mutation
+snapshot, as in rpiv-todo.
 
 The custom entry matters when `todo` is called from another tool, such as a Pi
 codemode script: Pi records that call only as a short summary on the outer
 tool's result, so its own `details` never reach the branch.
 
 The session-lifecycle handlers rebuild state by walking the branch and taking
-the last `rpiv-todo-state` snapshot. Sessions saved before these entries existed
-fall back to the last `todo` tool result's `details`. Either way, tasks survive
-`/reload`, `/resume`, `/tree` and compaction without any disk writes.
+the last `todo/v1` snapshot. Sessions started under rpiv-todo fall back to its
+last `rpiv-todo-state` entry, then to the last `todo` tool result's `details`.
+Either way, tasks survive `/reload`, `/resume`, `/tree` and compaction without
+any disk writes.
 
 ## Content strings
 
@@ -148,6 +170,7 @@ fall back to the last `todo` tool result's `details`. Either way, tasks survive
 | Cleared | `Cleared 7 tasks` |
 | `list` row | `[in_progress] #3 Write the parser (writing the parser) ⛓ #1,#2` |
 | `list` with nothing to show | `No tasks` |
+| `get` | `#3 [pending] Write the parser`, then one indented line per set field: `description`, `activeForm`, `blockedBy`, `blocks`, `owner`, `points`, `anchor`, and one `evidence: pass npm test @abc1234 (2026-11-24T09:00:00.000Z)` line per run |
 | Any rejection | `Error: <message>` |
 
 The `No change` reply exists so a model that re-issues an identical update sees
@@ -160,14 +183,18 @@ that it was a no-op instead of a fresh `Updated #N`.
 | `subject required for create` | `create` without a non-blank `subject` and without `tasks[]`. |
 | `create requires subject or tasks[], not both` | `create` with both `subject` and `tasks[]`. |
 | `tasks[] must be non-empty` | `create` with `tasks: []`. |
-| `create with tasks[] takes <fields> on each item, not at the top level` | `create` with `tasks[]` and a top-level `description`, `activeForm`, `blockedBy`, `owner`, or `metadata`. |
+| `create with tasks[] takes <fields> on each item, not at the top level` | `create` with `tasks[]` and a top-level `description`, `activeForm`, `blockedBy`, `owner`, `metadata`, `points`, `anchor`, or `evidence`. |
 | `tasks[N]: subject required for create` | A batch item with a blank or missing subject. |
 | `blockedBy: #N not found` | `create` naming an unknown dependency. |
 | `blockedBy: #N is deleted` | `create` naming a tombstoned dependency. |
 | `blockedBy: #N is another item in this batch; create the prerequisite first, then the dependent with blockedBy` | A `tasks[]` item naming a sibling that this call would assign. |
 | `id required for update` / `get` / `delete` | `id` omitted. |
 | `#N not found` | No task with that id. |
-| `update requires at least one mutable field: subject, description, activeForm, status, owner, metadata, addBlockedBy, or removeBlockedBy` | `update` with only an `id`. |
+| `update requires at least one mutable field: subject, description, activeForm, status, owner, metadata, points, anchor, evidence, addBlockedBy, or removeBlockedBy` | `update` with only an `id`. |
+| `points must be a number from 0 to 10` | `points` out of range; prefixed `tasks[N]: ` for a batch item. |
+| `anchor must be a non-empty string` | Blank `anchor`. |
+| `evidence[N]: command must be a non-empty string` / `result must be "pass" or "fail"` / `sha must be a string` / `at must be an ISO 8601 time` | A malformed evidence item. |
+| `metadata.<ns> refused #N: <reason>` | A namespace validator refused the change (see [CONTRACT.md](../CONTRACT.md#3-namespaces)). |
 | `illegal transition completed → in_progress` | Target status not reachable from the current one. |
 | `cannot block #N on itself` | `addBlockedBy` includes the task's own id. |
 | `addBlockedBy: #N not found` / `is deleted` | Unknown or tombstoned dependency. |
@@ -175,14 +202,17 @@ that it was a no-op instead of a fresh `Updated #N`.
 | `#N is already deleted` | `delete` on a tombstone. |
 
 Errors are returned in-band: `content` carries `Error: …` and `details.error`
-carries the bare message. Task state is unchanged.
+carries the bare message. Task state is unchanged. A namespace refusal is also
+flagged `isError: true`, so pi reports it to the model as a failed call; other
+rejections keep rpiv-todo's behaviour and are not flagged.
 
 ## Prompt guidance
 
-The tool ships a `promptSnippet` and nine `promptGuidelines` bullets telling the
+The tool ships a `promptSnippet` and ten `promptGuidelines` bullets telling the
 model when to open a list, to create independent tasks in one `tasks[]` call,
 to keep exactly one task `in_progress`, to mark work completed immediately
 rather than in batches, never to complete a task with failing tests, and the
-literal `update {id, status}` call shape for changing a task's status. Both are
+literal `update {id, status}` call shape for changing a task's status; the tenth
+describes `points`, `anchor`, and `evidence`. Both are
 overridable — see
 [configuration.md](./configuration.md#guidance).
