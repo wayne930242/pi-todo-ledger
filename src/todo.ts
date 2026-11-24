@@ -15,7 +15,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig, validateGuidanceFields } from "./config.ts";
 import { CHANGED_EVENT, type GuardOp, SNAPSHOT_ENTRY_TYPE, toChangedEvent, toSnapshot } from "./ledger/contract.ts";
-import type { GuardRegistry } from "./ledger/guards.ts";
+import { type GuardRegistry, runningGuard } from "./ledger/guards.ts";
 import { changedTasks, type NamespaceRegistry } from "./ledger/namespaces.ts";
 import { formatStatusLabel, t } from "./state/i18n-bridge.ts";
 import { selectTasksByStatus, selectTodoCounts, selectVisibleTasks } from "./state/selectors.ts";
@@ -93,6 +93,13 @@ export function registerTodoTool(pi: ExtensionAPI, namespaces: NamespaceRegistry
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const sessionId = sid(ctx);
+			// A guard reads `change.before` / `change.after`; calling `todo` for its own session would
+			// wait on the queue its own call holds. Refuse at once, before queueing.
+			const guardId = runningGuard(sessionId);
+			if (guardId !== undefined) {
+				const action = params.action as TaskAction;
+				return refuse(action, params as TaskMutationParams, getState(sessionId), `todo called from inside guard ${guardId}`);
+			}
 			return withSessionLock(sessionId, async () => {
 				const action = params.action as TaskAction;
 				const input = params as TaskMutationParams;

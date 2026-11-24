@@ -186,6 +186,8 @@ The first refusal refuses the whole call as in [Namespaces](#3-namespaces): noth
 An accepted `noop` update writes no entry and emits no event; a refused one returns the refusal like any other call.
 Reads (`list`, `get`) and calls the tool rejects run no guard.
 One session's `todo` calls run one at a time, so a guard never sees a `before` that another call of the same session is about to change.
+A guard reads the list from `change.before` and `change.after` and never calls the `todo` tool for the session it is judging: such a call is refused at once with `Error: todo called from inside guard <id>`, and changes nothing.
+Calling `todo` for another session is allowed.
 
 ## Coexistence
 

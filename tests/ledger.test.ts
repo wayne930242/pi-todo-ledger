@@ -501,6 +501,42 @@ test("a synchronous guard that runs past the limit is refused once it returns", 
 	assert.equal(snapshots(h.branch).length, 0);
 });
 
+test("a guard calling todo in its own session is refused at once and writes nothing", async () => {
+	const h = load({ guardTimeoutMs: 2000 });
+	let inner: Awaited<ReturnType<typeof h.call>> | undefined;
+	h.emit("todo:guard", {
+		v: 1,
+		id: "reenter",
+		check: async (change: { params: { subject?: string } }) => {
+			if (change.params.subject === "Outer") inner = await h.call({ action: "create", subject: "Inner" });
+			return undefined;
+		},
+	});
+	const started = Date.now();
+	const outer = await h.call({ action: "create", subject: "Outer" });
+	assert.ok(Date.now() - started < 1000, "no wait for the guard timeout");
+	assert.equal(inner?.isError, true);
+	assert.equal(text(inner!), "Error: todo called from inside guard reenter");
+	assert.equal(text(outer), "Created #1: Outer (pending)");
+	assert.deepEqual(
+		snapshots(h.branch).map((s) => s.tasks.map((t) => t.subject)),
+		[["Outer"]],
+	);
+
+	// Another session's call from inside a guard is not re-entry.
+	const other = load();
+	h.emit("todo:guard", {
+		v: 1,
+		id: "reenter",
+		check: async () => {
+			inner = await other.call({ action: "create", subject: "Elsewhere" });
+			return undefined;
+		},
+	});
+	await h.call({ action: "create", subject: "Second" });
+	assert.equal(text(inner!), "Created #1: Elsewhere (pending)");
+});
+
 test("a guard whose reason is the word timeout is a refusal, not a timeout", async () => {
 	const h = load({ guardTimeoutMs: 1000 });
 	h.emit("todo:guard", { v: 1, id: "literal", check: async () => "timeout" });
