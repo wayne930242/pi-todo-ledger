@@ -190,7 +190,8 @@ An accepted `noop` update writes no entry and emits no event; a refused one retu
 Reads (`list`, `get`) and calls the tool rejects run no guard.
 One session's `todo` calls run one at a time, so a guard never sees a `before` that another call of the same session is about to change.
 A guard reads the list from `change.before` and `change.after` and never calls the `todo` tool for the session it is judging: such a call is refused at once with `Error: todo called from inside guard <id>`, and changes nothing.
-Calling `todo` for another session is allowed.
+The same holds along a chain of guards: when session A's guard calls `todo` for session B, and B's guard calls `todo` for A, the call for A is refused the same way, naming A's guard.
+Calling `todo` for a session whose guard is not running further up the chain is allowed.
 A call aborted (through the tool's abort signal) while it waits for an earlier call or while its guards run commits nothing and returns `Error: call aborted; nothing changed`.
 
 ## Coexistence

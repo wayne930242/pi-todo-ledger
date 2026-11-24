@@ -10,16 +10,17 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { CONTRACT_VERSION, GUARD_EVENT, type GuardCheck, type TodoChangeV1 } from "./contract.ts";
 
 /**
- * The guard running in the current async context, if any. A guard that calls
- * the `todo` tool for its own session would wait on that session's call queue,
- * which its own call holds, until it times out; the tool checks this first.
+ * The chain of guards running in the current async context, outermost first:
+ * a guard of session A that calls `todo` for session B, whose guard is running
+ * now, gives [A's guard, B's guard]. A `todo` call for any session on the chain
+ * would wait on that session's call queue, which an outer call holds, until the
+ * outer guard times out; the tool checks this first.
  */
-const guardScope = new AsyncLocalStorage<{ sessionId: string; id: string }>();
+const guardChain = new AsyncLocalStorage<ReadonlyArray<{ sessionId: string; id: string }>>();
 
-/** The id of the guard of `sessionId` whose code is running here, or `undefined`. */
+/** The id of the outermost running guard of `sessionId` on this context's chain, or `undefined`. */
 export function runningGuard(sessionId: string): string | undefined {
-	const scope = guardScope.getStore();
-	return scope?.sessionId === sessionId ? scope.id : undefined;
+	return guardChain.getStore()?.find((link) => link.sessionId === sessionId)?.id;
 }
 
 /** Private marker for an expired timer; no guard can return it. */
@@ -75,8 +76,8 @@ export class GuardRegistry {
 		const timedOutMessage = `guard ${id} timed out after ${this.timeoutMs} ms`;
 		const started = performance.now();
 		try {
-			const scope = { sessionId: change.sessionId, id };
-			const answer = Promise.resolve().then(() => guardScope.run(scope, () => check(structuredClone(change))));
+			const chain = [...(guardChain.getStore() ?? []), { sessionId: change.sessionId, id }];
+			const answer = Promise.resolve().then(() => guardChain.run(chain, () => check(structuredClone(change))));
 			const reason = await Promise.race([answer, timedOut]);
 			if (reason === TIMED_OUT) return timedOutMessage;
 			// The timer cannot interrupt a guard that blocks the event loop; measure instead, so a

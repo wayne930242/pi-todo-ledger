@@ -537,6 +537,41 @@ test("a guard calling todo in its own session is refused at once and writes noth
 	assert.equal(text(inner!), "Created #1: Elsewhere (pending)");
 });
 
+test("a guard chain that comes back to a session on it is refused at once", async () => {
+	const a = load({ guardTimeoutMs: 2000 });
+	const b = load({ guardTimeoutMs: 2000 });
+	let fromB: Awaited<ReturnType<typeof a.call>> | undefined;
+	a.emit("todo:guard", {
+		v: 1,
+		id: "guard-a",
+		check: async (change: { params: { subject?: string } }) => {
+			if (change.params.subject === "A1") await b.call({ action: "create", subject: "B1" });
+			return undefined;
+		},
+	});
+	b.emit("todo:guard", {
+		v: 1,
+		id: "guard-b",
+		check: async () => {
+			fromB = await a.call({ action: "create", subject: "A2" });
+			return undefined;
+		},
+	});
+	const started = Date.now();
+	const outer = await a.call({ action: "create", subject: "A1" });
+	assert.ok(Date.now() - started < 1000, "no wait for the guard timeout");
+	assert.equal(text(fromB!), "Error: todo called from inside guard guard-a");
+	assert.equal(text(outer), "Created #1: A1 (pending)");
+	assert.deepEqual(
+		snapshots(a.branch).map((s) => s.tasks.map((t) => t.subject)),
+		[["A1"]],
+	);
+	assert.deepEqual(
+		snapshots(b.branch).map((s) => s.tasks.map((t) => t.subject)),
+		[["B1"]],
+	);
+});
+
 test("an aborted call never commits, whether aborted in the queue or during its guards", async () => {
 	const h = load();
 	let release: () => void = () => {};
