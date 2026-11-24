@@ -14,7 +14,7 @@ The schema's `$defs/task` is the exact definition.
 
 | Property | Type | Meaning |
 | --- | --- | --- |
-| `id` | integer ≥ 1 | Unique within the session; ids are never reused, except after `clear` restarts them at 1. |
+| `id` | integer ≥ 1 | Unique within one list, that is one branch of one session. Ids are not stable identities: `clear` restarts them at 1, and two branches of a session (after `/tree`) can give the same id to different tasks. |
 | `subject` | string | Short imperative line. |
 | `status` | `pending`, `in_progress`, `completed`, `deleted` | `deleted` is a tombstone that stays in the list. |
 | `description` | string, optional | Long-form detail. |
@@ -91,6 +91,12 @@ It fires:
 `sessionId` is the session whose list changed; a child session has its own list and its own events.
 `tasks` is the full list, tombstones included, as a copy: changing it does not change the list.
 The payload matches `$defs/changedEvent` in the schema.
+
+## Reading the list
+
+Each `todo:changed` payload and each `todo/v1` snapshot holds the session's whole current list.
+A consumer replaces its copy of that session's list with it every time.
+It never merges tasks by `sessionId` and `id`: after `clear` or a branch switch, the same id names a different task, and a merge would keep tasks that no longer exist or attach old fields to new tasks.
 
 ## 3. Namespaces
 
