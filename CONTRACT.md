@@ -188,6 +188,7 @@ Reads (`list`, `get`) and calls the tool rejects run no guard.
 One session's `todo` calls run one at a time, so a guard never sees a `before` that another call of the same session is about to change.
 A guard reads the list from `change.before` and `change.after` and never calls the `todo` tool for the session it is judging: such a call is refused at once with `Error: todo called from inside guard <id>`, and changes nothing.
 Calling `todo` for another session is allowed.
+A call aborted (through the tool's abort signal) while it waits for an earlier call or while its guards run commits nothing and returns `Error: call aborted; nothing changed`.
 
 ## Coexistence
 

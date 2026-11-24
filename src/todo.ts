@@ -73,6 +73,8 @@ export const DEFAULT_PROMPT_GUIDELINES: string[] = [
 	"Optional bookkeeping fields: points (effort, 0 to 10), anchor (the check that shows the task is done, e.g. a test command), and evidence (runs of checks, each {command, sha?, result: pass|fail, at?}). On update, points and anchor replace; evidence is appended, never replaced.",
 ];
 
+const ABORTED = "call aborted; nothing changed";
+
 /** An `isError` result for a refused call; the list is reported as it was. */
 function refuse(action: TaskAction, input: TaskMutationParams, state: TaskState, message: string) {
 	return { ...buildToolResult(action, input, state, { kind: "error", message }), isError: true };
@@ -91,7 +93,7 @@ export function registerTodoTool(pi: ExtensionAPI, namespaces: NamespaceRegistry
 		// Undo a double-encoded tasks[] before Pi validates it (#244 shape).
 		prepareArguments: prepareTodoArguments,
 
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const sessionId = sid(ctx);
 			// A guard reads `change.before` / `change.after`; calling `todo` for its own session would
 			// wait on the queue its own call holds. Refuse at once, before queueing.
@@ -104,6 +106,8 @@ export function registerTodoTool(pi: ExtensionAPI, namespaces: NamespaceRegistry
 				const action = params.action as TaskAction;
 				const input = params as TaskMutationParams;
 				const before = getState(sessionId);
+				// A call aborted while it waited in the queue, or while its guards ran, commits nothing.
+				if (signal?.aborted) return refuse(action, input, before, ABORTED);
 				const result = applyTaskMutation(before, action, input);
 				const guardChange = {
 					op: action as GuardOp,
@@ -129,6 +133,7 @@ export function registerTodoTool(pi: ExtensionAPI, namespaces: NamespaceRegistry
 				const refusal =
 					namespaces.check(changedTasks(result.op, input, result.state)) ?? (await guards.check(guardChange));
 				if (refusal) return refuse(action, input, before, refusal);
+				if (signal?.aborted) return refuse(action, input, before, ABORTED);
 				// Persist the snapshot as a custom entry on the calling session's branch, however the
 				// tool was reached: a call made through another tool (`ctx.executeTool`, e.g. codemode)
 				// never lands as a standalone `toolResult`, so its `details` alone would not survive

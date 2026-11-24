@@ -17,7 +17,7 @@ export interface Harness {
 	sessionId: string;
 	ctx: ExtensionContext;
 	/** Call the `todo` tool the way pi does after argument validation. */
-	call(params: Record<string, unknown>): Promise<ToolResult>;
+	call(params: Record<string, unknown>, signal?: AbortSignal): Promise<ToolResult>;
 	/** Fire a pi lifecycle event at the extension. */
 	fire(event: string): Promise<void>;
 	/** Emit on the shared event bus, as another extension would. */
@@ -87,12 +87,12 @@ export function load(
 		bus,
 		sessionId,
 		ctx,
-		async call(params) {
+		async call(params, signal) {
 			if (!tool) throw new Error("todo tool not registered");
 			const prepared = tool.prepareArguments ? tool.prepareArguments(params) : params;
 			let result: ToolResult;
 			try {
-				result = (await tool.execute("call-1", prepared as never, undefined, undefined, ctx as never)) as ToolResult;
+				result = (await tool.execute("call-1", prepared as never, signal, undefined, ctx as never)) as ToolResult;
 			} catch (error) {
 				// Pi turns a thrown error into an error result.
 				result = { content: [{ type: "text", text: (error as Error).message }], details: {}, isError: true };

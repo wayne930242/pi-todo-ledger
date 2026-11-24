@@ -537,6 +537,40 @@ test("a guard calling todo in its own session is refused at once and writes noth
 	assert.equal(text(inner!), "Created #1: Elsewhere (pending)");
 });
 
+test("an aborted call never commits, whether aborted in the queue or during its guards", async () => {
+	const h = load();
+	let release: () => void = () => {};
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const during = new AbortController();
+	h.emit("todo:guard", {
+		v: 1,
+		id: "gate",
+		check: async (change: { params: { subject?: string } }) => {
+			if (change.params.subject === "A") await gate;
+			if (change.params.subject === "C") during.abort();
+			return undefined;
+		},
+	});
+	const queued = new AbortController();
+	const a = h.call({ action: "create", subject: "A" });
+	const b = h.call({ action: "create", subject: "B" }, queued.signal);
+	queued.abort();
+	release();
+	assert.equal(text(await a), "Created #1: A (pending)");
+	const bResult = await b;
+	assert.equal(bResult.isError, true);
+	assert.equal(text(bResult), "Error: call aborted; nothing changed");
+
+	const cResult = await h.call({ action: "create", subject: "C" }, during.signal);
+	assert.equal(text(cResult), "Error: call aborted; nothing changed");
+	assert.deepEqual(
+		snapshots(h.branch).map((s) => s.tasks.map((t) => t.subject)),
+		[["A"]],
+	);
+});
+
 test("a guard whose reason is the word timeout is a refusal, not a timeout", async () => {
 	const h = load({ guardTimeoutMs: 1000 });
 	h.emit("todo:guard", { v: 1, id: "literal", check: async () => "timeout" });
