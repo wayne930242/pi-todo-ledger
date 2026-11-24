@@ -80,6 +80,8 @@ export interface TodoChangeV1 {
 	after: Task[];
 	sessionId: string;
 	cwd: string;
+	/** Present on a valid `update` that changes nothing; `before` equals `after`. */
+	noop?: true;
 }
 
 /** Returns, or resolves to, a refusal reason, or `undefined` to accept. */

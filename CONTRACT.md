@@ -61,7 +61,7 @@ Each entry holds the whole list, so a reader needs only the newest one.
 To read the current list, walk `ctx.sessionManager.getBranch()` and keep the newest entry whose `customType` is `todo/v1` and whose `data` matches the schema.
 Read the branch, not every session entry: entries on abandoned branches describe another history.
 
-Calls that change nothing write no entry: `list`, `get`, an `update` whose values equal the current ones, a call the tool rejects, and a call a namespace validator refuses.
+Calls that change nothing write no entry: `list`, `get`, an `update` whose values equal the current ones, a call the tool rejects, and a call a namespace validator or guard refuses.
 
 ### Migration from rpiv-todo
 
@@ -159,7 +159,8 @@ const register = () =>
 
 A later registration of the same `id` replaces the earlier one; the extension ignores, with a console warning, a payload whose `v` is not 1, whose `id` is empty, or whose `check` is not a function.
 
-The extension calls `check(change)` for every call that would change the list: `create` (a single task or a `tasks[]` batch, with or without metadata), an `update` that changes something, `delete`, and `clear`.
+The extension calls `check(change)` for every call that would change the list: `create` (a single task or a `tasks[]` batch, with or without metadata), an `update`, `delete`, and `clear`.
+A valid `update` that changes nothing, such as setting `in_progress` on a task already in progress after `/reload`, reaches the guards too, flagged `noop: true`: it is how an agent restates a task's state, and a guard may track it.
 `change` matches `$defs/change` in the schema and is a copy:
 
 | Property | Meaning |
@@ -170,6 +171,7 @@ The extension calls `check(change)` for every call that would change the list: `
 | `after` | The whole list as the call would commit it. |
 | `sessionId` | The session that made the call. |
 | `cwd` | That session's working directory. |
+| `noop` | `true` on an `update` that changes nothing, where `before` equals `after`; absent otherwise. |
 
 Guards run after the namespace validators and before anything commits, one at a time in registration order, and the extension awaits each.
 `check` returns, or resolves to, a non-empty string to refuse, or `undefined` to accept.
@@ -181,7 +183,8 @@ The first refusal refuses the whole call as in [Namespaces](#3-namespaces): noth
 | `check` throws or rejects | `Error: guard <id> refused: guard threw: <message>` |
 | `check` takes longer than 10 seconds | `Error: guard <id> timed out after 10000 ms` |
 
-Reads, rejected calls, and updates that change nothing run no guard.
+An accepted `noop` update writes no entry and emits no event; a refused one returns the refusal like any other call.
+Reads (`list`, `get`) and calls the tool rejects run no guard.
 One session's `todo` calls run one at a time, so a guard never sees a `before` that another call of the same session is about to change.
 
 ## Coexistence

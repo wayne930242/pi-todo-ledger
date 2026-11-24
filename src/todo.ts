@@ -21,6 +21,7 @@ import { formatStatusLabel, t } from "./state/i18n-bridge.ts";
 import { selectTasksByStatus, selectTodoCounts, selectVisibleTasks } from "./state/selectors.ts";
 import { applyTaskMutation, changesState } from "./state/state-reducer.ts";
 import { withSessionLock } from "./state/session-lock.ts";
+import type { TaskState } from "./state/state.ts";
 import { commitState, getRenderState, getState, sid } from "./state/store.ts";
 import { prepareTodoArguments } from "./tool/normalize-params.ts";
 import { buildToolResult } from "./tool/response-envelope.ts";
@@ -72,6 +73,11 @@ export const DEFAULT_PROMPT_GUIDELINES: string[] = [
 	"Optional bookkeeping fields: points (effort, 0 to 10), anchor (the check that shows the task is done, e.g. a test command), and evidence (runs of checks, each {command, sha?, result: pass|fail, at?}). On update, points and anchor replace; evidence is appended, never replaced.",
 ];
 
+/** An `isError` result for a refused call; the list is reported as it was. */
+function refuse(action: TaskAction, input: TaskMutationParams, state: TaskState, message: string) {
+	return { ...buildToolResult(action, input, state, { kind: "error", message }), isError: true };
+}
+
 export function registerTodoTool(pi: ExtensionAPI, namespaces: NamespaceRegistry, guards: GuardRegistry): void {
 	const guidance = validateGuidanceFields(loadConfig().guidance);
 	pi.registerTool({
@@ -92,26 +98,30 @@ export function registerTodoTool(pi: ExtensionAPI, namespaces: NamespaceRegistry
 				const input = params as TaskMutationParams;
 				const before = getState(sessionId);
 				const result = applyTaskMutation(before, action, input);
+				const guardChange = {
+					op: action as GuardOp,
+					params: input as Record<string, unknown>,
+					before: before.tasks,
+					after: result.state.tasks,
+					sessionId,
+					cwd: ctx.cwd,
+				};
 				if (!changesState(result.op)) {
+					// A valid update that changes nothing still reaches the guards (flagged `noop`):
+					// re-asserting a status is how an agent reports it after a reload, and guards may
+					// track it. It writes no snapshot and emits no event.
+					if (result.op.kind === "update") {
+						const refusal = await guards.check({ ...guardChange, noop: true });
+						if (refusal) return refuse(action, input, before, refusal);
+					}
 					commitState(sessionId, result.state);
 					return buildToolResult(action, input, result.state, result.op);
 				}
 				// Namespace owners, then change guards, see the change before it commits; a refusal
 				// leaves state untouched.
 				const refusal =
-					namespaces.check(changedTasks(result.op, input, result.state)) ??
-					(await guards.check({
-						op: action as GuardOp,
-						params: input as Record<string, unknown>,
-						before: before.tasks,
-						after: result.state.tasks,
-						sessionId,
-						cwd: ctx.cwd,
-					}));
-				if (refusal) {
-					const refused = buildToolResult(action, input, before, { kind: "error", message: refusal });
-					return { ...refused, isError: true };
-				}
+					namespaces.check(changedTasks(result.op, input, result.state)) ?? (await guards.check(guardChange));
+				if (refusal) return refuse(action, input, before, refusal);
 				// Persist the snapshot as a custom entry on the calling session's branch, however the
 				// tool was reached: a call made through another tool (`ctx.executeTool`, e.g. codemode)
 				// never lands as a standalone `toolResult`, so its `details` alone would not survive

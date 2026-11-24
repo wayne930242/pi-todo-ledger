@@ -132,7 +132,11 @@
         "before": { "type": "array", "items": { "$ref": "#/$defs/task" } },
         "after": { "type": "array", "items": { "$ref": "#/$defs/task" } },
         "sessionId": { "type": "string" },
-        "cwd": { "type": "string" }
+        "cwd": { "type": "string" },
+        "noop": {
+          "description": "Present on a valid update that changes nothing; before equals after.",
+          "const": true
+        }
       }
     },
     "namespaceEvent": {

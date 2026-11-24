@@ -425,8 +425,45 @@ test("guards are awaited, serialize calls per session, and run after namespace v
 	assert.equal(text(await h.call({ action: "create", subject: "x", metadata: { ns: "bad" } })), "Error: metadata.ns refused #3: bad");
 	assert.equal(guardCalls, calls, "a namespace refusal stops before the guards");
 	await h.call({ action: "list" });
-	await h.call({ action: "update", id: 1, status: "pending" }); // no change
-	assert.equal(guardCalls, calls, "reads and no-op updates run no guard");
+	await h.call({ action: "get", id: 1 });
+	await h.call({ action: "update", id: 99, status: "pending" }); // rejected
+	assert.equal(guardCalls, calls, "reads and rejected calls run no guard");
+});
+
+test("guards see no-op updates, flagged noop, which write nothing", async () => {
+	const h = load();
+	const seen: Array<Record<string, unknown>> = [];
+	await h.call({ action: "create", subject: "A" });
+	await h.call({ action: "update", id: 1, status: "in_progress" });
+	h.emit("todo:guard", {
+		v: 1,
+		id: "starts",
+		check: (change: Record<string, unknown>) => {
+			seen.push(change);
+			return undefined;
+		},
+	});
+	const entries = snapshots(h.branch).length;
+	const events = h.events("todo:changed").length;
+
+	const noop = await h.call({ action: "update", id: 1, status: "in_progress" });
+	assert.match(text(noop), /^No change: #1/);
+	assert.equal(seen.length, 1);
+	const change = seen[0] as { op: string; noop?: boolean; before: unknown; after: unknown };
+	assert.equal(change.op, "update");
+	assert.equal(change.noop, true);
+	assert.deepEqual(change.before, change.after);
+	assert.equal(snapshots(h.branch).length, entries, "no snapshot");
+	assert.equal(h.events("todo:changed").length, events, "no change event");
+
+	const changing = await h.call({ action: "update", id: 1, status: "completed" });
+	assert.equal(text(changing), "Updated #1 (in_progress → completed)");
+	assert.equal("noop" in (seen[1] ?? {}), false, "a real change carries no noop flag");
+
+	h.emit("todo:guard", { v: 1, id: "starts", check: () => "not now" });
+	const refusedNoop = await h.call({ action: "update", id: 1, status: "completed" });
+	assert.equal(refusedNoop.isError, true);
+	assert.equal(text(refusedNoop), "Error: guard starts refused: not now");
 });
 
 test("a guard that times out or throws refuses the call", async () => {
