@@ -91,6 +91,8 @@ export type GuardCheck = (change: TodoChangeV1) => string | undefined | Promise<
 export interface TodoGuardEventV1 {
 	v: 1;
 	id: string;
+	/** Opt in to judging imported tasks from change.after. Absent: refuse imports. */
+	imports?: true;
 	check: GuardCheck;
 }
 

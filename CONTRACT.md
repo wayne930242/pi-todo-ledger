@@ -168,7 +168,11 @@ const register = () =>
 A later registration of the same `id` replaces the earlier one; the extension ignores, with a console warning, a payload whose `v` is not 1, whose `id` is empty, or whose `check` is not a function.
 
 The extension calls `check(change)` for every call that would change the list: `create` (a single task or a `tasks[]` batch, with or without metadata), `import`, `update`, `delete`, and `clear`.
-On import, namespace validators see each relevant task as a `create`; each guard sees one `op: "create"` with `params.action: "import"`, the original `path`, an empty `before`, and the full imported list in `after`.
+On import, namespace validators see each relevant task as a `create`.
+Guard registration accepts an optional `imports: true` field within v1.
+If any registered guard has not opted in, the tool returns `Error: guard <id> refused: guard does not accept imports` without calling the guards or committing the list.
+Otherwise each guard sees one `op: "create"` with `params.action: "import"`, the original `path`, an empty `before`, and the full imported list in `after`.
+A guard that accepts imports must judge the tasks in `change.after`, not `change.params`: the arguments name the snapshot file but do not contain its tasks.
 A valid `update` that changes nothing, such as setting `in_progress` on a task already in progress after `/reload`, reaches the guards too, flagged `noop: true`: it is how an agent restates a task's state, and a guard may track it.
 `change` matches `$defs/change` in the schema and is a copy:
 

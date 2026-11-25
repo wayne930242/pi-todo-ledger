@@ -72,12 +72,26 @@ test("missing, malformed or inconsistent snapshots leave the list untouched", as
 	assert.equal(text(await h.call({ action: "list", includeDeleted: true })), "No tasks");
 });
 
-test("guard can refuse the whole import as one create without committing", async (t) => {
+test("a guard without import opt-in blocks the entire import", async (t) => {
+	const { h } = setup(t);
+	h.emit("todo:guard", { v: 1, id: "aware", imports: true, check: () => undefined });
+	let calls = 0;
+	h.emit("todo:guard", { v: 1, id: "legacy", check: () => { calls++; } });
+	const result = await h.call(params);
+	assert.ok(result.isError);
+	assert.equal(text(result), "Error: guard legacy refused: guard does not accept imports");
+	assert.equal(calls, 0);
+	assert.deepEqual(snapshots(h.branch), []);
+	assert.deepEqual(h.events("todo:changed"), []);
+	assert.equal(text(await h.call({ action: "list", includeDeleted: true })), "No tasks");
+});
+
+test("opted-in guard can accept or refuse the whole import as one create", async (t) => {
 	const { h } = setup(t);
 	const changes: TodoChangeV1[] = [];
-	h.emit("todo:guard", { v: 1, id: "policy", check: (change: TodoChangeV1) => {
+	h.emit("todo:guard", { v: 1, id: "policy", imports: true, check: (change: TodoChangeV1) => {
 		changes.push(change);
-		return "not allowed";
+		return changes.length === 1 ? "not allowed" : undefined;
 	} });
 	const result = await h.call(params);
 	assert.ok(result.isError);
@@ -86,4 +100,7 @@ test("guard can refuse the whole import as one create without committing", async
 	assert.deepEqual(snapshots(h.branch), []);
 	assert.deepEqual(h.events("todo:changed"), []);
 	assert.equal(text(await h.call({ action: "list" })), "No tasks");
+	assert.equal(text(await h.call(params)), "Imported 2 tasks");
+	assert.deepEqual(changes[1], changes[0]);
+	assert.deepEqual(snapshots(h.branch), [snapshot]);
 });

@@ -31,7 +31,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export class GuardRegistry {
-	private readonly guards = new Map<string, GuardCheck>();
+	private readonly guards = new Map<string, { check: GuardCheck; imports: boolean }>();
 	private readonly timeoutMs: number;
 
 	constructor(timeoutMs: number) {
@@ -52,7 +52,7 @@ export class GuardRegistry {
 		if (typeof payload.check !== "function") {
 			return `${GUARD_EVENT}: check must be a function (id "${payload.id}")`;
 		}
-		this.guards.set(payload.id, payload.check as GuardCheck);
+		this.guards.set(payload.id, { check: payload.check as GuardCheck, imports: payload.imports === true });
 		return undefined;
 	}
 
@@ -61,7 +61,13 @@ export class GuardRegistry {
 	 * Returns the first refusal as the tool's error message, or `undefined`.
 	 */
 	async check(change: TodoChangeV1): Promise<string | undefined> {
-		for (const [id, check] of this.guards) {
+		const guards = change.params.action === "import" ? [...this.guards] : this.guards;
+		if (change.params.action === "import") {
+			for (const [id, guard] of guards) {
+				if (!guard.imports) return `guard ${id} refused: guard does not accept imports`;
+			}
+		}
+		for (const [id, { check }] of guards) {
 			const reason = await this.runOne(id, check, change);
 			if (reason !== undefined) return reason;
 		}

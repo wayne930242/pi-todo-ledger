@@ -118,7 +118,8 @@
       "required": ["v", "id"],
       "properties": {
         "v": { "const": 1 },
-        "id": { "type": "string", "minLength": 1 }
+        "id": { "type": "string", "minLength": 1 },
+        "imports": { "const": true, "description": "Opt in to checking snapshot imports. Without opt-in the guard blocks imports." }
       }
     },
     "change": {
