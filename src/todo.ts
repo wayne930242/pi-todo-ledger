@@ -16,10 +16,11 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig, validateGuidanceFields } from "./config.ts";
 import { CHANGED_EVENT, type GuardOp, SNAPSHOT_ENTRY_TYPE, toChangedEvent, toSnapshot } from "./ledger/contract.ts";
 import { type GuardRegistry, runningGuard } from "./ledger/guards.ts";
+import { readImport } from "./ledger/import-snapshot.ts";
 import { changedTasks, type NamespaceRegistry } from "./ledger/namespaces.ts";
 import { formatStatusLabel, t } from "./state/i18n-bridge.ts";
 import { selectTasksByStatus, selectTodoCounts, selectVisibleTasks } from "./state/selectors.ts";
-import { applyTaskMutation, changesState } from "./state/state-reducer.ts";
+import { applyTaskMutation, type ApplyResult, changesState } from "./state/state-reducer.ts";
 import { withSessionLock } from "./state/session-lock.ts";
 import type { TaskState } from "./state/state.ts";
 import { commitState, getRenderState, getState, sid } from "./state/store.ts";
@@ -68,6 +69,7 @@ export const DEFAULT_PROMPT_GUIDELINES: string[] = [
 	'To change a task\'s status, call update with the task id and the target status, e.g. {"action":"update","id":3,"status":"completed"} or {"action":"update","id":3,"status":"in_progress","activeForm":"writing tests"}. status is the field that changes the task; an update without a mutable field (status or another) is rejected.',
 	"Use blockedBy to express dependencies (A is blocked by B). On create, pass blockedBy as the initial set. On update, use addBlockedBy / removeBlockedBy (additive merge — do not resend the full array). Cycles are rejected.",
 	"To create several independent tasks at once, pass create with tasks: [{subject}, ...]. Do not also pass subject. tasks[] cannot blockedBy each other (ids do not exist until the call commits); create the prerequisite first, then the dependent with blockedBy. Dependency chains stay single-create.",
+	"Use import with a snapshot file path to restore a handed-over list into an empty session list.",
 	"list hides tombstoned (deleted) tasks by default; pass includeDeleted:true to see them. Pass status to filter by a single status.",
 	"Subject must be short and imperative (e.g. 'Research existing tool'); description is for long-form detail. activeForm is a present-continuous label shown while in_progress.",
 	"Optional bookkeeping fields: points (effort, 0 to 10), anchor (the check that shows the task is done, e.g. a test command), and evidence (runs of checks, each {command, sha?, result: pass|fail, at?}). On update, points and anchor replace; evidence is appended, never replaced.",
@@ -86,7 +88,7 @@ export function registerTodoTool(pi: ExtensionAPI, namespaces: NamespaceRegistry
 		name: TOOL_NAME,
 		label: TOOL_LABEL,
 		description:
-			"Manage a task list for tracking multi-step progress. Actions: create (new task, or several independent tasks at once via tasks[]), update (change status/fields/dependencies), list (all tasks, optionally filtered by status), get (single task details), delete (tombstone), clear (reset all). Status: pending → in_progress → completed, plus deleted tombstone. Use this to plan and track multi-step work like research, design, and implementation.",
+			"Manage a task list for tracking multi-step progress. Actions: create (new task, or several independent tasks at once via tasks[]), update (change status/fields/dependencies), list (all tasks, optionally filtered by status), get (single task details), delete (tombstone), clear (reset all), import (restore a snapshot file into an empty list). Status: pending → in_progress → completed, plus deleted tombstone. Use this to plan and track multi-step work like research, design, and implementation.",
 		promptSnippet: guidance.promptSnippet ?? DEFAULT_PROMPT_SNIPPET,
 		promptGuidelines: guidance.promptGuidelines ?? DEFAULT_PROMPT_GUIDELINES,
 		parameters: TodoParamsSchema,
@@ -108,9 +110,18 @@ export function registerTodoTool(pi: ExtensionAPI, namespaces: NamespaceRegistry
 				const before = getState(sessionId);
 				// A call aborted while it waited in the queue, or while its guards ran, commits nothing.
 				if (signal?.aborted) return refuse(action, input, before, ABORTED);
-				const result = applyTaskMutation(before, action, input);
+				let result: ApplyResult;
+				if (action === "import") {
+					try {
+						result = { state: await readImport(before, ctx.cwd, input.path, signal), op: { kind: "import" } };
+					} catch (error) {
+						return refuse(action, input, before, signal?.aborted ? ABORTED : String(error instanceof Error ? error.message : error));
+					}
+				} else {
+					result = applyTaskMutation(before, action, input);
+				}
 				const guardChange = {
-					op: action as GuardOp,
+					op: action === "import" ? "create" as const : action as GuardOp,
 					params: input as Record<string, unknown>,
 					before: before.tasks,
 					after: result.state.tasks,

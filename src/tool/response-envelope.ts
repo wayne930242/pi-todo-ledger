@@ -68,6 +68,8 @@ export function formatContent(op: Op, state: TaskState): string {
 		}
 		case "delete":
 			return `Deleted #${op.id}: ${sanitizeTerminalText(op.subject)}`;
+		case "import":
+			return `Imported ${state.tasks.length} tasks`;
 		case "clear":
 			return `Cleared ${op.count} tasks`;
 		case "list": {

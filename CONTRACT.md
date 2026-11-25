@@ -41,7 +41,8 @@ A `todo` `update` call adds its `evidence` items after the existing ones, and no
 
 > [!IMPORTANT]
 > Evidence is self-reported bookkeeping, not proof.
-> The agent writes each entry through the `todo` tool; the extension checks its shape and that `at` is not in the future, but runs nothing and cannot tell whether the command ran or how it ended.
+> When recording new evidence, the extension checks its shape and time; when importing or replaying a snapshot, it preserves the recorded time.
+> It runs nothing and cannot tell whether the command ran or how it ended.
 > Use it to find which checks were run and on which revision, so the next round can reuse a green run.
 > A consumer that judges whether a check passed after the last change, such as a guard that blocks closing a task, keeps the session's real tool results (the command's own output on the branch) as the source of truth and treats evidence only as a pointer to them.
 
@@ -62,6 +63,13 @@ To read the current list, walk `ctx.sessionManager.getBranch()` and keep the new
 Read the branch, not every session entry: entries on abandoned branches describe another history.
 
 Calls that change nothing write no entry: `list`, `get`, an `update` whose values equal the current ones, a call the tool rejects, and a call a namespace validator or guard refuses.
+
+### Import into an empty list
+
+Since 0.2.0, `todo` accepts `{ "action": "import", "path": "handover.json" }` as an additive operation within v1.
+The file contains the snapshot `data` itself, not the surrounding session entry.
+Import requires an empty list (even a tombstone counts as a task), unique task ids, a task for every `blockedBy` id, and a `nextId` greater than every task id.
+It preserves all task fields, including historical evidence timestamps, and commits one `todo/v1` entry with the supplied `nextId`.
 
 ### Migration from rpiv-todo
 
@@ -159,7 +167,8 @@ const register = () =>
 
 A later registration of the same `id` replaces the earlier one; the extension ignores, with a console warning, a payload whose `v` is not 1, whose `id` is empty, or whose `check` is not a function.
 
-The extension calls `check(change)` for every call that would change the list: `create` (a single task or a `tasks[]` batch, with or without metadata), an `update`, `delete`, and `clear`.
+The extension calls `check(change)` for every call that would change the list: `create` (a single task or a `tasks[]` batch, with or without metadata), `import`, `update`, `delete`, and `clear`.
+On import, namespace validators see each relevant task as a `create`; each guard sees one `op: "create"` with `params.action: "import"`, the original `path`, an empty `before`, and the full imported list in `after`.
 A valid `update` that changes nothing, such as setting `in_progress` on a task already in progress after `/reload`, reaches the guards too, flagged `noop: true`: it is how an agent restates a task's state, and a guard may track it.
 `change` matches `$defs/change` in the schema and is a copy:
 

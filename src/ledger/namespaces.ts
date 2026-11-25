@@ -33,6 +33,8 @@ function metadataKeys(value: unknown): string[] {
 export function changedTasks(op: Op, params: TaskMutationParams, next: TaskState): TaskChange[] {
 	const find = (id: number) => next.tasks.find((t) => t.id === id);
 	switch (op.kind) {
+		case "import":
+			return next.tasks.map((task) => ({ task, op: "create", touched: [] }));
 		case "create": {
 			const items = Array.isArray(params.tasks) ? params.tasks : undefined;
 			return op.taskIds.flatMap((id, i) => {

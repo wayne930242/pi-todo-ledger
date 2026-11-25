@@ -2,7 +2,7 @@
 
 Complete parameter schema, status machine, response envelope, and error strings
 for the `todo` tool registered by pi-todo-ledger. The actions and parameters are
-rpiv-todo's, plus the bookkeeping fields `points`, `anchor`, and `evidence`.
+rpiv-todo's, plus snapshot import and the bookkeeping fields `points`, `anchor`, and `evidence`.
 
 ## Actions
 
@@ -14,12 +14,15 @@ rpiv-todo's, plus the bookkeeping fields `points`, `anchor`, and `evidence`.
 | `get` | `id` | Returns one task with its `blockedBy` and reverse `blocks` edges. |
 | `delete` | `id` | Tombstones the task (`status: "deleted"`); it is not removed. |
 | `clear` | — | Drops every task and resets the id counter to `1`. |
+| `import` | `path` | Restores a `todo/v1` snapshot file into an empty list. |
 
 ## Parameters
 
 ```ts
 todo({
-  action: "create" | "update" | "list" | "get" | "delete" | "clear",
+  action: "create" | "update" | "list" | "get" | "delete" | "clear" | "import",
+
+  path?: string,                      // import only; relative to the session cwd
 
   // create-only (one-of: subject or tasks[])
   subject?: string,                   // required for single create
@@ -85,6 +88,11 @@ existing ones. No call removes an evidence entry or a field once set; `points: 0
 is the lowest estimate. Pi drops a `null` passed for an optional parameter before
 the tool sees it, so `points: null` changes nothing.
 
+`import` reads `{ "v": 1, "tasks": [...], "nextId": n }` from a JSON file and keeps every task field as stored.
+If the file is unreadable or does not match the snapshot schema, the tool reports an error and leaves the list alone.
+Task ids must be unique, every `blockedBy` target must exist, and `nextId` must exceed the largest task id.
+The destination must contain no tasks, including tombstones.
+
 ## Status transitions
 
 | From | Allowed targets |
@@ -140,7 +148,7 @@ tasks' `blockedBy` arrays.
 
 ## Persistence
 
-Every call that changes the list (`create`, `delete`, `clear`, or an `update`
+Every call that changes the list (`create`, `import`, `delete`, `clear`, or an `update`
 that changed something) appends a `todo/v1` custom entry holding the whole list
 to the session branch, and emits `todo:changed`. Both are part of the public
 contract in [CONTRACT.md](../CONTRACT.md). Custom entries are never sent to the
@@ -167,6 +175,7 @@ any disk writes.
 | Updated without a status change | `Updated #3` |
 | Update that changed nothing | `No change: #3 already matches the requested values (status: in_progress)` |
 | Deleted | `Deleted #3: Write the parser` |
+| Imported | `Imported 7 tasks` |
 | Cleared | `Cleared 7 tasks` |
 | `list` row | `[in_progress] #3 Write the parser (writing the parser) ⛓ #1,#2` |
 | `list` with nothing to show | `No tasks` |

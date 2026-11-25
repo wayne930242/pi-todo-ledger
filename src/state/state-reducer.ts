@@ -27,6 +27,7 @@ export type Op =
 	| { kind: "delete"; id: number; subject: string }
 	| { kind: "list"; statusFilter?: TaskStatus; includeDeleted: boolean }
 	| { kind: "get"; task: Task }
+	| { kind: "import" }
 	| { kind: "clear"; count: number }
 	| { kind: "error"; message: string };
 
@@ -46,6 +47,7 @@ export function changesState(op: Op): boolean {
 		case "create":
 		case "delete":
 		case "clear":
+		case "import":
 			return true;
 		case "update":
 			return op.changed;
@@ -212,7 +214,7 @@ function taskChanged(before: Task, after: Task): boolean {
  */
 export function applyTaskMutation(
 	state: TaskState,
-	action: TaskAction,
+	action: Exclude<TaskAction, "import">,
 	params: TaskMutationParams,
 	now: string = new Date().toISOString(),
 ): ApplyResult {

@@ -36,6 +36,7 @@ let sessionCounter = 0;
 export function load(
 	options: {
 		branch?: unknown[];
+		cwd?: string;
 		before?: (h: Harness) => void;
 		/** Throw from `appendEntry` while this returns true. */
 		failAppend?: () => boolean;
@@ -51,7 +52,7 @@ export function load(
 
 	const ctx = {
 		hasUI: false,
-		cwd: "/work/project",
+		cwd: options.cwd ?? "/work/project",
 		ui: { notify: () => {} },
 		sessionManager: { getSessionId: () => sessionId, getBranch: () => branch },
 	} as unknown as ExtensionContext;

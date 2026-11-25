@@ -44,6 +44,7 @@ export const ACTION_GLYPH: Record<TaskAction, string> = {
 	get: "›",
 	list: "☰",
 	clear: "∅",
+	import: "↓",
 };
 
 /**
@@ -116,7 +117,9 @@ export function renderTodoCall(
 	let text = theme.fg("toolTitle", theme.bold("todo "));
 	if (args.action) text += theme.fg("muted", ACTION_GLYPH[args.action] ?? args.action);
 
-	if (args.action === "create" && args.subject) {
+	if (args.action === "import" && args.path) {
+		text += ` ${theme.fg("dim", sanitizeTerminalText(args.path))}`;
+	} else if (args.action === "create" && args.subject) {
 		text += ` ${theme.fg("dim", sanitizeTerminalText(args.subject))}`;
 	} else if (args.action === "create" && Array.isArray(args.tasks)) {
 		text += ` ${theme.fg("dim", `${args.tasks.length} tasks`)}`;
@@ -174,6 +177,7 @@ function echoedStatus(details: TaskDetails | undefined): TaskStatus | undefined 
 			return details.tasks.find((t) => t.id === params.id)?.status;
 		case "list":
 		case "get":
+		case "import":
 		case "clear":
 			return undefined;
 	}

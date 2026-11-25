@@ -33,7 +33,7 @@ export const MSG_NO_TODOS = "No todos yet. Ask the agent to add some!";
 
 export type TaskStatus = "pending" | "in_progress" | "completed" | "deleted";
 
-export type TaskAction = "create" | "update" | "list" | "get" | "delete" | "clear";
+export type TaskAction = "create" | "update" | "list" | "get" | "delete" | "clear" | "import";
 
 export type EvidenceResult = "pass" | "fail";
 
@@ -122,6 +122,7 @@ export interface TaskMutationParams {
 	anchor?: string;
 	evidence?: EvidenceInput[];
 	id?: number;
+	path?: string;
 	includeDeleted?: boolean;
 	/** Batch create items. One-of with `subject` on `create`. */
 	tasks?: CreateTaskInput[];
@@ -172,7 +173,8 @@ const CreateTaskInputSchema = Type.Object({
 });
 
 export const TodoParamsSchema = Type.Object({
-	action: StringEnum(["create", "update", "list", "get", "delete", "clear"] as const),
+	action: StringEnum(["create", "update", "list", "get", "delete", "clear", "import"] as const),
+	path: Type.Optional(Type.String({ description: "Snapshot file (import only); relative to the session cwd" })),
 	subject: Type.Optional(
 		Type.String({
 			description: "Task subject line (required for create unless tasks[] is set)",

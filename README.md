@@ -40,6 +40,16 @@ The new fields are optional parameters of `create` (and of each `tasks[]` item) 
 `evidence` items are appended after the existing ones; `at` defaults to the time of the call.
 `get` shows all three fields.
 
+To pick up another session's list, save the `data` from its latest `todo/v1` entry as JSON.
+In the new session, call `todo` before creating any tasks:
+
+```json
+{ "action": "import", "path": "handover.json" }
+```
+
+A relative path starts in the new session's working directory.
+Import keeps the task ids, dependencies, evidence, tombstones, and next id; it never merges with or replaces an existing list.
+
 ## Reading the list from another extension
 
 Listen for the event, or read the newest snapshot on the branch:
