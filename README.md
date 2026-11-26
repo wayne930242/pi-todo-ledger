@@ -10,6 +10,7 @@ On top of them it publishes a bookkeeping contract, [CONTRACT.md](CONTRACT.md):
 - **Change guards.** An extension that must approve whole calls (including creates without metadata, batches, deletes, and `clear`) registers an async guard with `todo:guard`; the tool awaits it before committing.
 - **Stable identity.** Each new task gets a `uid` that survives replay and import. Imported tasks also name their source session when the snapshot records it.
 - **Bookkeeping fields.** Tasks gain `points` (effort, 0 to 10), `anchor` (the check that shows the task is done), and `evidence` (an append-only list of check runs, each `{ command, sha?, ref?, result, at }`).
+- **Work graph.** A task can name the graph of the plan it belongs to: `single-loop`, `fan-out/fan-in`, or `orchestrator-worker`. `list` groups open tasks by it.
 
 ## Replaces rpiv-todo
 
@@ -41,8 +42,26 @@ The new fields are optional parameters of `create` (and of each `tasks[]` item) 
 `evidence` items are appended after the existing ones; `at` defaults to the time of the call.
 `get` shows all three fields.
 
-To pick up another session's list, save the `data` from its latest `todo/v1` entry as JSON.
-In the new session, call `todo` before creating any tasks:
+`graph` names the work graph of the plan a task belongs to, one of `single-loop`, `fan-out/fan-in`, and `orchestrator-worker`; any other value is refused.
+One session often runs several plans, so each task carries its own.
+An update replaces it and `graph: null` clears it.
+When an open task names a graph, `list` shows open tasks under one `<graph>:` header per graph, then `no graph:`, then `closed:`.
+A `metadata.graph` holding one of the three names, as earlier sessions wrote it, is read as `graph` when the list is restored or imported.
+
+```text
+{ "action": "create", "tasks": [{ "subject": "Port the parser", "graph": "fan-out/fan-in" }, { "subject": "Port the printer", "graph": "fan-out/fan-in" }] }
+```
+
+To pick up another session's list, for example after its pane died, call `todo` in the new session before creating any tasks and name the old session by its id, a unique prefix of it, or its `.jsonl` file:
+
+```json
+{ "action": "import", "session": "01a2130c" }
+```
+
+The tool looks the id up in pi's session directories (`PI_CODING_AGENT_SESSION_DIR` when set, and `sessions` under the agent directory, `PI_CODING_AGENT_DIR` or `~/.pi/agent`) and restores the newest `todo/v1` snapshot on that session's current branch.
+An id that matches several sessions, or none, is refused.
+
+A snapshot file works too: save the `data` from a `todo/v1` entry as JSON and import it by path.
 
 ```json
 { "action": "import", "path": "handover.json" }

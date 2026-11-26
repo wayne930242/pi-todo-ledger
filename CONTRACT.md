@@ -26,6 +26,7 @@ The schema's `$defs/task` is the exact definition.
 | `metadata` | object, optional | Free-form fields; each top-level key is a namespace (see [Namespaces](#3-namespaces)). |
 | `points` | number from 0 to 10, optional | Effort estimate. |
 | `anchor` | non-empty string, optional | The check that shows the task is done, such as a test command. |
+| `graph` | `single-loop`, `fan-out/fan-in`, `orchestrator-worker`, optional | Since 0.4.0: the work graph of the plan the task belongs to. Update replaces it; `null` on update clears it. A reader that finds no `graph` but a `metadata.graph` holding one of these names may treat it as the graph, as this extension does on replay and import. |
 | `evidence` | Evidence[], optional | Runs of checks, oldest first. |
 
 An evidence entry is `{ command, sha?, ref?, result, at }`:
@@ -70,6 +71,7 @@ Calls that change nothing write no entry: `list`, `get`, an `update` whose value
 ### Import into an empty list
 
 Since 0.2.0, `todo` accepts `{ "action": "import", "path": "handover.json" }` as an additive operation within v1.
+Since 0.4.0, `{ "action": "import", "session": "<id, unique id prefix, or .jsonl path>" }` reads the snapshot from the newest `todo/v1` entry on another session's current branch instead, looking ids up in pi's session directories; a snapshot without `sessionId` takes the source session's id.
 The file contains the snapshot `data` itself, not the surrounding session entry.
 Import requires an empty list (even a tombstone counts as a task), unique task ids, a task for every `blockedBy` id, and a `nextId` greater than every task id.
 New snapshots carry the writer's `sessionId`. Import uses it to set each task's `origin.session`, replacing any previous source. If the snapshot lacks `sessionId`, import leaves `origin` untouched. All other task fields, including historical evidence timestamps, and the supplied `nextId` are preserved.
@@ -174,7 +176,7 @@ The extension calls `check(change)` for every call that would change the list: `
 On import, namespace validators see each relevant task as a `create`.
 Guard registration accepts an optional `imports: true` field within v1.
 If any registered guard has not opted in, the tool returns `Error: guard <id> refused: guard does not accept imports` without calling the guards or committing the list.
-Otherwise each guard sees one `op: "create"` with `params.action: "import"`, the original `path`, an empty `before`, and the full imported list in `after`.
+Otherwise each guard sees one `op: "create"` with `params.action: "import"`, the original `path` or `session`, an empty `before`, and the full imported list in `after`.
 A guard that accepts imports must judge the tasks in `change.after`, not `change.params`: the arguments name the snapshot file but do not contain its tasks.
 A valid `update` that changes nothing, such as setting `in_progress` on a task already in progress after `/reload`, reaches the guards too, flagged `noop: true`: it is how an agent restates a task's state, and a guard may track it.
 `change` matches `$defs/change` in the schema and is a copy:

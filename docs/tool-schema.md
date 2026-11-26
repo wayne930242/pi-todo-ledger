@@ -14,7 +14,7 @@ rpiv-todo's, plus snapshot import and the bookkeeping fields `points`, `anchor`,
 | `get` | `id` | Returns one task with its `blockedBy` and reverse `blocks` edges. |
 | `delete` | `id` | Tombstones the task (`status: "deleted"`); it is not removed. |
 | `clear` | — | Drops every task and resets the id counter to `1`. |
-| `import` | `path` | Restores a `todo/v1` snapshot file into an empty list. |
+| `import` | `path` or `session` | Restores a `todo/v1` snapshot file, or another session's latest snapshot, into an empty list. |
 
 ## Parameters
 
@@ -23,6 +23,7 @@ todo({
   action: "create" | "update" | "list" | "get" | "delete" | "clear" | "import",
 
   path?: string,                      // import only; relative to the session cwd
+  session?: string,                   // import only, instead of path: session id, unique id prefix, or .jsonl path
 
   // create-only (one-of: subject or tasks[])
   subject?: string,                   // required for single create
@@ -36,6 +37,7 @@ todo({
     metadata?: Record<string, unknown>,
     points?: number,
     anchor?: string,
+    graph?: string,
     evidence?: Evidence[],
   }>,
 
@@ -46,6 +48,7 @@ todo({
   metadata?: Record<string, unknown>, // on update, a null value deletes that key
   points?: number,                    // effort, 0 to 10; update replaces
   anchor?: string,                    // the check that shows the task is done; update replaces
+  graph?: "single-loop" | "fan-out/fan-in" | "orchestrator-worker" | null, // update replaces; null clears (update only)
   evidence?: Array<{                  // check runs; update appends, never replaces
     command: string,
     ref?: string,                     // tool call id or child:<id>; ≤64 characters, no whitespace
@@ -72,7 +75,7 @@ todo({
 `create` takes either `subject` (one task) or `tasks[]` (several independent
 tasks). Passing both is rejected, even with a blank `subject`. Each item carries
 its own `description`, `activeForm`, `blockedBy`, `owner`, `metadata`, `points`,
-`anchor` and `evidence`; the same
+`anchor`, `graph` and `evidence`; the same
 fields at the top level of a batch are rejected rather than dropped. The batch is validated first and committed
 together: one bad item fails the whole call and leaves the list unchanged.
 Items in `tasks[]` cannot `blockedBy` each other; those ids do not exist until
@@ -87,9 +90,22 @@ array.
 `update` replaces `points` and `anchor` and appends `evidence` items after the
 existing ones. No call removes an evidence entry or a field once set; `points: 0`
 is the lowest estimate. Pi drops a `null` passed for an optional parameter before
-the tool sees it, so `points: null` changes nothing.
+the tool sees it, so `points: null` changes nothing. `graph` is the exception:
+its schema admits `null`, and `update` with `graph: null` removes the field, along
+with a `metadata.graph` that holds a graph name, so a reload does not bring it back.
+
+`graph` accepts only `single-loop`, `fan-out/fan-in`, and `orchestrator-worker`.
+On replay and import, a task without `graph` whose `metadata.graph` holds one of
+these names is read with that graph; its metadata is kept as it was.
 
 `import` reads `{ "v": 1, "tasks": [...], "nextId": n }` from a JSON file and keeps every task field as stored.
+With `session` instead of `path`, it reads the newest valid `todo/v1` entry on the
+current branch (the one ending at the last entry) of another session's file. A
+`session` ending in `.jsonl` or containing a path separator is a file path
+relative to the cwd; anything else is a full session id or a unique id prefix,
+matched against the `<time>_<id>.jsonl` files in `PI_CODING_AGENT_SESSION_DIR`
+(when set) and `<agent dir>/sessions`, directly or one directory down. The calling
+session is never matched. An exact id wins over prefix matches.
 If the file is unreadable or does not match the snapshot schema, the tool reports an error and leaves the list alone.
 Task ids must be unique, every `blockedBy` target must exist, and `nextId` must exceed the largest task id.
 The destination must contain no tasks, including tombstones.
@@ -141,6 +157,7 @@ tasks' `blockedBy` arrays.
       metadata?: Record<string, unknown>,
       points?: number,
       anchor?: string,
+      graph?: "single-loop" | "fan-out/fan-in" | "orchestrator-worker",
       evidence?: Array<{ command: string, sha?: string, ref?: string, result: "pass" | "fail", at: string }>,
     }>,
     nextId: number,
@@ -181,8 +198,9 @@ any disk writes.
 | Imported | `Imported 7 tasks` |
 | Cleared | `Cleared 7 tasks` |
 | `list` row | `[in_progress] #3 Write the parser (writing the parser) ⛓ #1,#2` |
+| `list` when an open task names a graph | `<graph>:` then its open rows, for each graph in id order of first use; then `no graph:` and `closed:` with the remaining rows |
 | `list` with nothing to show | `No tasks` |
-| `get` | `#3 [pending] Write the parser`, then one indented line per set field: `description`, `activeForm`, `blockedBy`, `blocks`, `owner`, `points`, `anchor`, and one `evidence: pass npm test @abc1234 (2026-11-24T09:00:00.000Z)` line per run |
+| `get` | `#3 [pending] Write the parser`, then one indented line per set field: `description`, `activeForm`, `blockedBy`, `blocks`, `owner`, `points`, `anchor`, `graph`, and one `evidence: pass npm test @abc1234 (2026-11-24T09:00:00.000Z)` line per run |
 | Any rejection | `Error: <message>` |
 
 The `No change` reply exists so a model that re-issues an identical update sees
@@ -195,16 +213,19 @@ that it was a no-op instead of a fresh `Updated #N`.
 | `subject required for create` | `create` without a non-blank `subject` and without `tasks[]`. |
 | `create requires subject or tasks[], not both` | `create` with both `subject` and `tasks[]`. |
 | `tasks[] must be non-empty` | `create` with `tasks: []`. |
-| `create with tasks[] takes <fields> on each item, not at the top level` | `create` with `tasks[]` and a top-level `description`, `activeForm`, `blockedBy`, `owner`, `metadata`, `points`, `anchor`, or `evidence`. |
+| `create with tasks[] takes <fields> on each item, not at the top level` | `create` with `tasks[]` and a top-level `description`, `activeForm`, `blockedBy`, `owner`, `metadata`, `points`, `anchor`, `graph`, or `evidence`. |
 | `tasks[N]: subject required for create` | A batch item with a blank or missing subject. |
 | `blockedBy: #N not found` | `create` naming an unknown dependency. |
 | `blockedBy: #N is deleted` | `create` naming a tombstoned dependency. |
 | `blockedBy: #N is another item in this batch; create the prerequisite first, then the dependent with blockedBy` | A `tasks[]` item naming a sibling that this call would assign. |
 | `id required for update` / `get` / `delete` | `id` omitted. |
 | `#N not found` | No task with that id. |
-| `update requires at least one mutable field: subject, description, activeForm, status, owner, metadata, points, anchor, evidence, addBlockedBy, or removeBlockedBy` | `update` with only an `id`. |
+| `update requires at least one mutable field: subject, description, activeForm, status, owner, metadata, points, anchor, graph, evidence, addBlockedBy, or removeBlockedBy` | `update` with only an `id`. |
 | `points must be a number from 0 to 10` | `points` out of range; prefixed `tasks[N]: ` for a batch item. |
 | `anchor must be a non-empty string` | Blank `anchor`. |
+| `graph must be single-loop, fan-out/fan-in, or orchestrator-worker` | Any other `graph`, or `null` on create; on update the message adds ` (null clears)`; prefixed `tasks[N]: ` for a batch item. |
+| `path or session required for import` / `import takes path or session, not both` | `import` with neither or both. |
+| `no session <id> in <dirs>` / `session <id> is ambiguous: <ids>` / `session <id> has no todo/v1 snapshot` | `import` with a `session` that matches no session, several, or one without a snapshot (flagged `isError`, like every import failure). |
 | `evidence[N]: command must be a non-empty string` / `result must be "pass" or "fail"` / `sha must be a string` / `at must be an ISO 8601 time` / `at must not be in the future` | A malformed evidence item; `at` may lie at most five minutes after the call. |
 | `metadata.<ns> refused #N: <reason>` | A namespace validator refused the change (see [CONTRACT.md](../CONTRACT.md#3-namespaces)). |
 | `guard <id> refused: <reason>` / `guard <id> timed out after 10000 ms` | A change guard refused the call (see [CONTRACT.md](../CONTRACT.md#4-change-guards)). |
