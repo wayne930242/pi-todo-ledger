@@ -138,6 +138,7 @@ export interface TaskMutationParams {
 	evidence?: EvidenceInput[];
 	id?: number;
 	path?: string;
+	session?: string;
 	includeDeleted?: boolean;
 	/** Batch create items. One-of with `subject` on `create`. */
 	tasks?: CreateTaskInput[];
@@ -192,6 +193,7 @@ const CreateTaskInputSchema = Type.Object({
 export const TodoParamsSchema = Type.Object({
 	action: StringEnum(["create", "update", "list", "get", "delete", "clear", "import"] as const),
 	path: Type.Optional(Type.String({ description: "Snapshot file (import only); relative to the session cwd" })),
+	session: Type.Optional(Type.String({ description: "Or a session id, id prefix, or .jsonl (import only)" })),
 	subject: Type.Optional(
 		Type.String({
 			description: "Task subject line (required for create unless tasks[] is set)",
