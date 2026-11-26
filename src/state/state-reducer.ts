@@ -108,8 +108,8 @@ function validateEvidenceInput(value: unknown, now: string): string | undefined 
 	const e = value as Record<string, unknown>;
 	if (typeof e.command !== "string" || !e.command.trim()) return "command must be a non-empty string";
 	if (e.result !== "pass" && e.result !== "fail") return 'result must be "pass" or "fail"';
-	if (e.ref !== undefined && (typeof e.ref !== "string" || Array.from(e.ref).length > 64 || /\s/u.test(e.ref))) {
-		return "ref must be a string of up to 64 characters without whitespace";
+	if (e.ref !== undefined && (typeof e.ref !== "string" || !e.ref || Array.from(e.ref).length > 64 || /\s/u.test(e.ref))) {
+		return "ref must be a non-empty string of up to 64 characters without whitespace";
 	}
 	if (e.sha !== undefined && typeof e.sha !== "string") return "sha must be a string";
 	if (e.at !== undefined && (typeof e.at !== "string" || Number.isNaN(Date.parse(e.at)))) {

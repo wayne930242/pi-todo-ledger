@@ -59,6 +59,7 @@ test("missing, malformed or inconsistent snapshots leave the list untouched", as
 		[JSON.stringify({ ...snapshot, tasks: [tasks[1]] }), /blockedBy: #3 not found/],
 		[JSON.stringify({ ...snapshot, tasks: [tasks[0], tasks[0]] }), /duplicate/],
 		[JSON.stringify({ ...snapshot, nextId: 8 }), /nextId/],
+		[JSON.stringify({ ...snapshot, tasks: [{ ...tasks[0], uid: "t_aaaaaaaaaa" }, { ...tasks[1], uid: "t_aaaaaaaaaa" }] }), /duplicate task uid/],
 	];
 	for (const [contents, reason] of cases) {
 		if (contents === undefined) rmSync(file);

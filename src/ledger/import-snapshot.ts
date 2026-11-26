@@ -16,8 +16,13 @@ export async function readImport(before: TaskState, cwd: string, path?: string, 
 	}
 	if (!isSnapshotV1(snapshot)) throw new Error("import file does not match the todo/v1 snapshot schema");
 	const ids = new Set<number>();
-	for (const { id } of snapshot.tasks) {
+	const uids = new Set<string>();
+	for (const { id, uid } of snapshot.tasks) {
 		if (ids.has(id)) throw new Error(`duplicate task id #${id}`);
+		if (uid !== undefined) {
+			if (uids.has(uid)) throw new Error(`duplicate task uid ${uid} (#${id})`);
+			uids.add(uid);
+		}
 		if (snapshot.nextId <= id) throw new Error(`nextId must be greater than task id #${id}`);
 		ids.add(id);
 	}

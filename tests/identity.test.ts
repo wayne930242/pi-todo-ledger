@@ -29,7 +29,7 @@ test('uids survive updates, branch replay and handover; legacy tasks get no inve
 
 test('invalid evidence references are refused before commit', async () => {
  const h = load();
- for (const ref of ['has space','has\ttab','x'.repeat(65),9]) {
+ for (const ref of ['', 'has space','has\ttab','x'.repeat(65),9]) {
   assert.match(text(await h.call({action:'create',subject:'x',evidence:[{command:'x',result:'pass',ref}]})), /Error:.*ref/);
  }
  assert.equal(snapshots(h.branch).length,0);
