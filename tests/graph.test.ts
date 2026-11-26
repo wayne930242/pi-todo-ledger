@@ -53,6 +53,12 @@ test("update replaces graph, null clears it, and the same value is no change", a
 	assert.equal(text(await h.call({ action: "update", id: 1, graph: null })), "Updated #1");
 	assert.equal("graph" in last(h)[0]!, false);
 	assert.match(text(await h.call({ action: "update", id: 1, graph: null })), /^No change/);
+	// Clearing also drops a legacy metadata.graph, so a reload does not bring it back.
+	await h.call({ action: "create", subject: "Legacy", metadata: { graph: "single-loop", train: 1 } });
+	assert.equal(last(h)[1]!.graph, "single-loop");
+	await h.call({ action: "update", id: 2, graph: null });
+	assert.deepEqual(last(h)[1]!.metadata, { train: 1 });
+	assert.equal(replayFromBranch(branchOf(h.branch)).tasks[1]!.graph, undefined);
 });
 
 test("list groups open tasks by graph, ungrouped then closed last; without graphs it is unchanged", async () => {
