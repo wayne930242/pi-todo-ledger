@@ -56,6 +56,12 @@ export interface EvidenceInput {
 	at?: string;
 }
 
+/** The work graphs a plan can name (pi-straw-boss prompts/planning.md §1). */
+export const GRAPHS = ["single-loop", "fan-out/fan-in", "orchestrator-worker"] as const;
+export type Graph = (typeof GRAPHS)[number];
+export const isGraph = (value: unknown): value is Graph =>
+	typeof value === "string" && (GRAPHS as readonly string[]).includes(value);
+
 /** Inclusive bounds of `Task.points`. */
 export const POINTS_MIN = 0;
 export const POINTS_MAX = 10;
@@ -75,6 +81,8 @@ export interface Task {
 	points?: number;
 	/** The check that shows this task is done, e.g. a test command. */
 	anchor?: string;
+	/** The work graph of the plan this task belongs to. */
+	graph?: Graph;
 	/** Runs of checks, oldest first. Append-only. */
 	evidence?: Evidence[];
 }
@@ -108,6 +116,7 @@ export interface CreateTaskInput {
 	metadata?: Record<string, unknown>;
 	points?: number;
 	anchor?: string;
+	graph?: string;
 	evidence?: EvidenceInput[];
 }
 
@@ -124,6 +133,8 @@ export interface TaskMutationParams {
 	metadata?: Record<string, unknown>;
 	points?: number;
 	anchor?: string;
+	/** A graph name; `null` clears it on update. */
+	graph?: string | null;
 	evidence?: EvidenceInput[];
 	id?: number;
 	path?: string;
@@ -174,6 +185,7 @@ const CreateTaskInputSchema = Type.Object({
 	),
 	points: Type.Optional(PointsSchema("Effort points, 0 to 10")),
 	anchor: Type.Optional(AnchorSchema("The check that shows this task is done, e.g. a test command")),
+	graph: Type.Optional(Type.String()),
 	evidence: Type.Optional(EvidenceSchema("Check runs already recorded for this task")),
 });
 
@@ -223,6 +235,11 @@ export const TodoParamsSchema = Type.Object({
 		AnchorSchema(
 			"The check that shows this task is done, e.g. a test command (create or update; update replaces)",
 		),
+	),
+	graph: Type.Optional(
+		Type.Union([Type.String(), Type.Null()], {
+			description: "single-loop, fan-out/fan-in, or orchestrator-worker; null clears",
+		}),
 	),
 	evidence: Type.Optional(
 		EvidenceSchema(

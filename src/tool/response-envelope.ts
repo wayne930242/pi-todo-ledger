@@ -15,6 +15,36 @@ function formatListLine(t: Task): string {
 	return `[${t.status}] #${t.id} ${sanitizeTerminalText(t.subject)}${form}${block}`;
 }
 
+const isOpen = (t: Task): boolean => t.status === "pending" || t.status === "in_progress";
+
+/**
+ * `list` body. When an open task names a graph, open tasks are grouped under
+ * `<graph>:` headers in first-seen order, then `no graph:`, then `closed:` for
+ * the rest; otherwise one line per task in id order.
+ */
+function formatList(view: readonly Task[]): string {
+	if (!view.some((t) => isOpen(t) && t.graph)) return view.map(formatListLine).join("\n");
+	const groups = new Map<string, Task[]>();
+	const closed: Task[] = [];
+	for (const t of view) {
+		if (!isOpen(t)) closed.push(t);
+		else {
+			const key = t.graph ?? "";
+			groups.set(key, [...(groups.get(key) ?? []), t]);
+		}
+	}
+	const ungrouped = groups.get("");
+	groups.delete("");
+	const lines: string[] = [];
+	const section = (header: string, tasks: Task[] | undefined) => {
+		if (tasks?.length) lines.push(`${header}:`, ...tasks.map(formatListLine));
+	};
+	for (const [graph, tasks] of groups) section(graph, tasks);
+	section("no graph", ungrouped);
+	section("closed", closed);
+	return lines.join("\n");
+}
+
 /**
  * Multi-line presentation for the `get` action. Order of rows is pinned by
  * pre-refactor `todo.ts:354-376` — description, activeForm, blockedBy, blocks,
@@ -34,6 +64,7 @@ function formatGetLines(task: Task, state: TaskState): string {
 	if (task.owner) lines.push(`  owner: ${sanitizeTerminalText(task.owner)}`);
 	if (task.points !== undefined) lines.push(`  points: ${task.points}`);
 	if (task.anchor) lines.push(`  anchor: ${sanitizeTerminalText(task.anchor)}`);
+	if (task.graph) lines.push(`  graph: ${task.graph}`);
 	for (const e of task.evidence ?? []) {
 		const sha = e.sha ? ` @${sanitizeTerminalText(e.sha)}` : "";
 		lines.push(`  evidence: ${e.result} ${sanitizeTerminalText(e.command)}${sha} (${sanitizeTerminalText(e.at)})`);
@@ -76,7 +107,7 @@ export function formatContent(op: Op, state: TaskState): string {
 			let view = state.tasks;
 			if (!op.includeDeleted) view = view.filter((t) => t.status !== "deleted");
 			if (op.statusFilter) view = view.filter((t) => t.status === op.statusFilter);
-			return view.length === 0 ? "No tasks" : view.map(formatListLine).join("\n");
+			return view.length === 0 ? "No tasks" : formatList(view);
 		}
 		case "get":
 			return formatGetLines(op.task, state);

@@ -2,6 +2,7 @@ import { SNAPSHOT_ENTRY_TYPE } from "../ledger/contract.ts";
 import { isSnapshotV1 } from "../ledger/schema.ts";
 import { LEGACY_STATE_ENTRY_TYPE, type Task, type TaskDetails, type TaskStatus, TOOL_NAME } from "../tool/types.ts";
 import { EMPTY_STATE, type TaskState } from "./state.ts";
+import { withLegacyGraph } from "./state-reducer.ts";
 
 const TASK_STATUSES: ReadonlySet<unknown> = new Set<TaskStatus>(["pending", "in_progress", "completed", "deleted"]);
 
@@ -39,7 +40,7 @@ export function isTaskDetails(value: unknown): value is TaskDetails {
 
 /** Fresh `TaskState` from a persisted snapshot — deep-copies the tasks so replay never aliases branch data. */
 function stateOf(details: { tasks: Task[]; nextId: number }): TaskState {
-	return { tasks: structuredClone(details.tasks), nextId: details.nextId };
+	return { tasks: structuredClone(details.tasks).map(withLegacyGraph), nextId: details.nextId };
 }
 
 /**

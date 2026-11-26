@@ -64,6 +64,10 @@
           "type": "string",
           "minLength": 1
         },
+        "graph": {
+          "description": "The work graph of the plan the task belongs to.",
+          "enum": ["single-loop", "fan-out/fan-in", "orchestrator-worker"]
+        },
         "evidence": {
           "description": "Runs of checks, oldest first. Append-only: a later snapshot of the same task starts with the earlier snapshot's entries.",
           "type": "array",

@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 import {
 	type Evidence,
 	type EvidenceInput,
+	GRAPHS,
+	isGraph,
 	POINTS_MAX,
 	POINTS_MIN,
 	type Task,
@@ -72,6 +74,7 @@ const BATCH_ITEM_FIELDS = [
 	"metadata",
 	"points",
 	"anchor",
+	"graph",
 	"evidence",
 ] as const;
 
@@ -83,7 +86,12 @@ const BATCH_ITEM_FIELDS = [
 /** How far ahead of the call time an evidence `at` may lie, for clock skew between machines. */
 export const EVIDENCE_FUTURE_TOLERANCE_MS = 5 * 60_000;
 
-function validateLedgerFields(spec: TaskMutationParams, now: string): string | undefined {
+const GRAPH_ERROR = `graph must be ${GRAPHS.slice(0, -1).join(", ")}, or ${GRAPHS.at(-1)}`;
+
+function validateLedgerFields(spec: TaskMutationParams, now: string, clearable = false): string | undefined {
+	if (spec.graph !== undefined && !isGraph(spec.graph) && !(clearable && spec.graph === null)) {
+		return clearable ? `${GRAPH_ERROR} (null clears)` : GRAPH_ERROR;
+	}
 	if (spec.points !== undefined) {
 		const p = spec.points;
 		if (typeof p !== "number" || !Number.isFinite(p) || p < POINTS_MIN || p > POINTS_MAX) {
@@ -132,6 +140,17 @@ function toEvidence(input: EvidenceInput, now: string): Evidence {
 	};
 }
 
+/**
+ * Read a legacy `metadata.graph` holding a valid graph name as the task's `graph`,
+ * unless the task names one itself. Metadata stays as it was, so readers of the
+ * old key keep working and recorded history is not rewritten.
+ */
+export function withLegacyGraph(task: Task): Task {
+	if (task.graph !== undefined) return task;
+	const legacy = task.metadata?.graph;
+	return isGraph(legacy) ? { ...task, graph: legacy } : task;
+}
+
 function asCreateItem(value: unknown): TaskMutationParams | undefined {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
 	return value as TaskMutationParams;
@@ -151,8 +170,9 @@ function buildCreatedTask(id: number, spec: TaskMutationParams, subject: string,
 	if (spec.metadata) newTask.metadata = { ...spec.metadata };
 	if (spec.points !== undefined) newTask.points = spec.points;
 	if (spec.anchor !== undefined) newTask.anchor = spec.anchor;
+	if (isGraph(spec.graph)) newTask.graph = spec.graph;
 	if (spec.evidence?.length) newTask.evidence = spec.evidence.map((e) => toEvidence(e, now));
-	return newTask;
+	return withLegacyGraph(newTask);
 }
 
 function validateCreateBlockedBy(
@@ -203,6 +223,7 @@ function taskChanged(before: Task, after: Task): boolean {
 		before.owner !== after.owner ||
 		before.points !== after.points ||
 		before.anchor !== after.anchor ||
+		before.graph !== after.graph ||
 		(before.evidence?.length ?? 0) !== (after.evidence?.length ?? 0) ||
 		!sameNumberList(before.blockedBy, after.blockedBy) ||
 		!sameRecord(before.metadata, after.metadata)
@@ -298,15 +319,16 @@ export function applyTaskMutation(
 				params.metadata !== undefined ||
 				params.points !== undefined ||
 				params.anchor !== undefined ||
+				params.graph !== undefined ||
 				(params.evidence && params.evidence.length > 0) ||
 				(params.addBlockedBy && params.addBlockedBy.length > 0) ||
 				(params.removeBlockedBy && params.removeBlockedBy.length > 0);
 			if (!hasMutation)
 				return errorResult(
 					state,
-					"update requires at least one mutable field: subject, description, activeForm, status, owner, metadata, points, anchor, evidence, addBlockedBy, or removeBlockedBy",
+					"update requires at least one mutable field: subject, description, activeForm, status, owner, metadata, points, anchor, graph, evidence, addBlockedBy, or removeBlockedBy",
 				);
-			const ledgerError = validateLedgerFields(params, now);
+			const ledgerError = validateLedgerFields(params, now, true);
 			if (ledgerError) return errorResult(state, ledgerError);
 
 			let newStatus = current.status;
@@ -352,16 +374,23 @@ export function applyTaskMutation(
 			if (params.owner !== undefined) updated.owner = params.owner;
 			if (params.points !== undefined) updated.points = params.points;
 			if (params.anchor !== undefined) updated.anchor = params.anchor;
+			if (params.graph === null) delete updated.graph;
+			else if (isGraph(params.graph)) updated.graph = params.graph;
 			if (params.evidence?.length) {
 				updated.evidence = [...(current.evidence ?? []), ...params.evidence.map((e) => toEvidence(e, now))];
 			}
 			if (newBlockedBy.length) updated.blockedBy = newBlockedBy;
 			else delete updated.blockedBy;
+			if (params.graph === null && isGraph(newMetadata?.graph)) {
+				// Clearing the graph also clears the legacy key that load would read back as one.
+				const { graph: _legacy, ...rest } = newMetadata;
+				newMetadata = Object.keys(rest).length ? rest : undefined;
+			}
 			if (newMetadata === undefined) delete updated.metadata;
 			else updated.metadata = newMetadata;
 
 			const newTasks = [...state.tasks];
-			newTasks[idx] = updated;
+			newTasks[idx] = withLegacyGraph(updated);
 			return {
 				state: { tasks: newTasks, nextId: state.nextId },
 				op: {
@@ -369,7 +398,7 @@ export function applyTaskMutation(
 					id: updated.id,
 					fromStatus: current.status,
 					toStatus: newStatus,
-					changed: taskChanged(current, updated),
+					changed: taskChanged(current, newTasks[idx]),
 				},
 			};
 		}

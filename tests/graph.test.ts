@@ -32,9 +32,7 @@ test("a graph outside the three names is refused with the names, and nothing com
 		{ action: "create", subject: "Z", graph: null },
 	];
 	for (const params of calls) {
-		const result = await h.call(params);
-		assert.ok(result.isError, JSON.stringify(params));
-		assert.match(text(result), NAMES);
+		assert.match(text(await h.call(params)), new RegExp(`^Error: (tasks\\[0\\]: )?graph must be ${NAMES.source}`), JSON.stringify(params));
 	}
 	assert.equal(snapshots(h.branch).length, 1);
 });
@@ -42,8 +40,8 @@ test("a graph outside the three names is refused with the names, and nothing com
 test("graph on a batch create belongs to each item, not the top level", async () => {
 	const h = load();
 	const result = await h.call({ action: "create", graph: "single-loop", tasks: [{ subject: "A" }] });
-	assert.ok(result.isError);
-	assert.match(text(result), /graph on each item/);
+	assert.match(text(result), /^Error: .*graph on each item/);
+	assert.equal(snapshots(h.branch).length, 0);
 });
 
 test("update replaces graph, null clears it, and the same value is no change", async () => {

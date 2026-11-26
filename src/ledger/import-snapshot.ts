@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { TaskState } from "../state/state.ts";
+import { withLegacyGraph } from "../state/state-reducer.ts";
 import { isSnapshotV1 } from "./schema.ts";
 
 /** Prepare the imported state without writing it; the caller holds the session lock. */
@@ -32,6 +33,6 @@ export async function readImport(before: TaskState, cwd: string, path?: string, 
 		}
 	}
 	const session = snapshot.sessionId;
-	const tasks = session ? snapshot.tasks.map(task => ({ ...task, origin: { session } })) : snapshot.tasks;
+	const tasks = snapshot.tasks.map(task => withLegacyGraph(session ? { ...task, origin: { session } } : task));
 	return { tasks, nextId: snapshot.nextId };
 }
