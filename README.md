@@ -8,7 +8,8 @@ On top of them it publishes a bookkeeping contract, [CONTRACT.md](CONTRACT.md):
 - **Change event.** `todo:changed` on `pi.events` carries `{ v: 1, sessionId, tasks }` after every change and when a session's list is restored.
 - **Namespace validators.** An extension that owns `metadata.<ns>` registers a validator with `todo:namespace`; the tool runs it before committing and returns its refusal as a tool error.
 - **Change guards.** An extension that must approve whole calls (including creates without metadata, batches, deletes, and `clear`) registers an async guard with `todo:guard`; the tool awaits it before committing.
-- **Bookkeeping fields.** Tasks gain `points` (effort, 0 to 10), `anchor` (the check that shows the task is done), and `evidence` (an append-only list of check runs, each `{ command, sha?, result, at }`).
+- **Stable identity.** Each new task gets a `uid` that survives replay and import. Imported tasks also name their source session when the snapshot records it.
+- **Bookkeeping fields.** Tasks gain `points` (effort, 0 to 10), `anchor` (the check that shows the task is done), and `evidence` (an append-only list of check runs, each `{ command, sha?, ref?, result, at }`).
 
 ## Replaces rpiv-todo
 

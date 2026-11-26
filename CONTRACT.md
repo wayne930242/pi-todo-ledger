@@ -15,6 +15,8 @@ The schema's `$defs/task` is the exact definition.
 | Property | Type | Meaning |
 | --- | --- | --- |
 | `id` | integer ≥ 1 | Unique within one list, that is one branch of one session. Ids are not stable identities: `clear` restarts them at 1, and two branches of a session (after `/tree`) can give the same id to different tasks. |
+| `uid` | string, optional | A random `t_` plus ten lowercase base32 characters. Create assigns it once; update, replay, and import retain it. Older tasks keep no uid. |
+| `origin` | object, optional | On import from a known session, `{ session }` identifies the session that wrote the imported snapshot. |
 | `subject` | string | Short imperative line. |
 | `status` | `pending`, `in_progress`, `completed`, `deleted` | `deleted` is a tombstone that stays in the list. |
 | `description` | string, optional | Long-form detail. |
@@ -26,11 +28,12 @@ The schema's `$defs/task` is the exact definition.
 | `anchor` | non-empty string, optional | The check that shows the task is done, such as a test command. |
 | `evidence` | Evidence[], optional | Runs of checks, oldest first. |
 
-An evidence entry is `{ command, sha?, result, at }`:
+An evidence entry is `{ command, sha?, ref?, result, at }`:
 
 | Property | Type | Meaning |
 | --- | --- | --- |
 | `command` | non-empty string | The check that ran. |
+| `ref` | string, optional | Tool call id of the run, or `child:<id>`; up to 64 characters without whitespace. |
 | `sha` | string, optional | Revision the check ran on, such as a git commit SHA. |
 | `result` | `pass` or `fail` | How the run ended. |
 | `at` | string | ISO 8601 time of the run in UTC, as `Date.prototype.toISOString` writes it. The tool converts the caller's time to that form, fills in the call time when the caller leaves it out, and rejects a time more than five minutes after the call. |
@@ -69,7 +72,7 @@ Calls that change nothing write no entry: `list`, `get`, an `update` whose value
 Since 0.2.0, `todo` accepts `{ "action": "import", "path": "handover.json" }` as an additive operation within v1.
 The file contains the snapshot `data` itself, not the surrounding session entry.
 Import requires an empty list (even a tombstone counts as a task), unique task ids, a task for every `blockedBy` id, and a `nextId` greater than every task id.
-It preserves all task fields, including historical evidence timestamps, and commits one `todo/v1` entry with the supplied `nextId`.
+New snapshots carry the writer's `sessionId`. Import uses it to set each task's `origin.session`, replacing any previous source. If the snapshot lacks `sessionId`, import leaves `origin` untouched. All other task fields, including historical evidence timestamps, and the supplied `nextId` are preserved.
 
 ### Migration from rpiv-todo
 

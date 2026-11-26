@@ -48,6 +48,7 @@ todo({
   anchor?: string,                    // the check that shows the task is done; update replaces
   evidence?: Array<{                  // check runs; update appends, never replaces
     command: string,
+    ref?: string,                     // tool call id or child:<id>; ≤64 characters, no whitespace
     sha?: string,                     // revision the check ran on
     result: "pass" | "fail",
     at?: string,                      // ISO 8601; stored in UTC; defaults to the time of the call
@@ -129,6 +130,8 @@ tasks' `blockedBy` arrays.
     params: Record<string, unknown>,
     tasks: Array<{
       id: number,
+      uid?: string,                          // stable across branches and import
+      origin?: { session: string },          // source session on import, when known
       subject: string,
       description?: string,
       activeForm?: string,
@@ -138,7 +141,7 @@ tasks' `blockedBy` arrays.
       metadata?: Record<string, unknown>,
       points?: number,
       anchor?: string,
-      evidence?: Array<{ command: string, sha?: string, result: "pass" | "fail", at: string }>,
+      evidence?: Array<{ command: string, sha?: string, ref?: string, result: "pass" | "fail", at: string }>,
     }>,
     nextId: number,
     error?: string,                          // present only on a rejected call
