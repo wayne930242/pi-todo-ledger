@@ -26,5 +26,7 @@ export async function readImport(before: TaskState, cwd: string, path?: string, 
 			if (!ids.has(dep)) throw new Error(`#${task.id} blockedBy: #${dep} not found`);
 		}
 	}
-	return { tasks: snapshot.tasks, nextId: snapshot.nextId };
+	const session = snapshot.sessionId;
+	const tasks = session ? snapshot.tasks.map(task => ({ ...task, origin: { session } })) : snapshot.tasks;
+	return { tasks, nextId: snapshot.nextId };
 }

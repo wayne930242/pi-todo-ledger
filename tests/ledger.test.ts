@@ -99,7 +99,7 @@ test("a session started under rpiv-todo keeps its list and continues in todo/v1"
 	await h.fire("session_start");
 	await h.call({ action: "update", id: 1, status: "completed" });
 	const [snapshot] = snapshots(h.branch);
-	assert.deepEqual(snapshot, { v: 1, tasks: [{ ...legacyTask, status: "completed" }], nextId: 2 });
+	assert.deepEqual(snapshot, { v: 1, sessionId: h.sessionId, tasks: [{ ...legacyTask, status: "completed" }], nextId: 2 });
 	assert.equal(
 		h.branch.filter((e) => (e as { customType?: string }).customType === "rpiv-todo-state").length,
 		1,
@@ -134,11 +134,11 @@ test("todo/v1 snapshots match the schema and replay to the same list in a new se
 
 	const last = all.at(-1);
 	assert.deepEqual(last, {
-		v: 1,
+		v: 1, sessionId: h.sessionId,
 		nextId: 4,
 		tasks: [
 			{
-				id: 1,
+				id: 1, uid: all[0]?.tasks[0]?.uid,
 				subject: "Write replay tests",
 				status: "pending",
 				metadata: { team: { lane: "a" } },
@@ -146,8 +146,8 @@ test("todo/v1 snapshots match the schema and replay to the same list in a new se
 				anchor: "npm test",
 				evidence: [{ command: "npm test", result: "fail", at: "2026-11-23T08:00:00.000Z" }],
 			},
-			{ id: 2, subject: "Second", status: "deleted", owner: "w2", points: 0 },
-			{ id: 3, subject: "Third", status: "in_progress", activeForm: "waiting", blockedBy: [1] },
+			{ id: 2, uid: all[1]?.tasks[1]?.uid, subject: "Second", status: "deleted", owner: "w2", points: 0 },
+			{ id: 3, uid: all[1]?.tasks[2]?.uid, subject: "Third", status: "in_progress", activeForm: "waiting", blockedBy: [1] },
 		],
 	});
 
@@ -378,7 +378,7 @@ test("a guard sees every mutating call with before, after, params, session, and 
 		op: "create",
 		params: { action: "create", subject: "No step" },
 		before: [],
-		after: [{ id: 1, subject: "No step", status: "pending" }],
+		after: [{ id: 1, uid: (changes[0]?.after as {uid:string}[])[0]?.uid, subject: "No step", status: "pending" }],
 		sessionId: h.sessionId,
 		cwd: "/work/project",
 	});

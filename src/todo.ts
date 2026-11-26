@@ -152,7 +152,7 @@ export function registerTodoTool(pi: ExtensionAPI, namespaces: NamespaceRegistry
 				// replay. Pi's own codemode persists its `store()` the same way.
 				// The entry is written before the live state commits: if appending throws, the call
 				// fails with the list unchanged, so live state never runs ahead of the branch.
-				pi.appendEntry(SNAPSHOT_ENTRY_TYPE, toSnapshot(result.state));
+				pi.appendEntry(SNAPSHOT_ENTRY_TYPE, toSnapshot(result.state, sessionId));
 				commitState(sessionId, result.state);
 				pi.events.emit(CHANGED_EVENT, toChangedEvent(sessionId, result.state));
 				return buildToolResult(action, input, result.state, result.op);

@@ -39,6 +39,7 @@ export type EvidenceResult = "pass" | "fail";
 
 /** One recorded run of a check: what ran, on which revision, how it ended, and when. */
 export interface Evidence {
+	ref?: string;
 	command: string;
 	sha?: string;
 	result: EvidenceResult;
@@ -48,6 +49,7 @@ export interface Evidence {
 
 /** Evidence as a caller supplies it: `at` defaults to the time of the call. */
 export interface EvidenceInput {
+	ref?: string;
 	command: string;
 	sha?: string;
 	result: EvidenceResult;
@@ -59,6 +61,8 @@ export const POINTS_MIN = 0;
 export const POINTS_MAX = 10;
 
 export interface Task {
+	uid?: string;
+	origin?: { session: string };
 	id: number;
 	subject: string;
 	description?: string;
@@ -139,6 +143,7 @@ const PointsSchema = (description: string) =>
 const AnchorSchema = (description: string) => Type.String({ minLength: 1, description });
 
 const EvidenceInputSchema = Type.Object({
+	ref: Type.Optional(Type.String({ maxLength: 64, pattern: "^\\S*$", description: "Run or child:<id>" })),
 	command: Type.String({ minLength: 1, description: "The check that ran, e.g. 'npm test -- replay'" }),
 	sha: Type.Optional(Type.String({ description: "Revision the check ran on, e.g. a git commit SHA" })),
 	result: StringEnum(["pass", "fail"] as const, { description: "How the run ended" }),

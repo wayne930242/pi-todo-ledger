@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import {
 	type Evidence,
 	type EvidenceInput,
@@ -107,6 +108,9 @@ function validateEvidenceInput(value: unknown, now: string): string | undefined 
 	const e = value as Record<string, unknown>;
 	if (typeof e.command !== "string" || !e.command.trim()) return "command must be a non-empty string";
 	if (e.result !== "pass" && e.result !== "fail") return 'result must be "pass" or "fail"';
+	if (e.ref !== undefined && (typeof e.ref !== "string" || Array.from(e.ref).length > 64 || /\s/u.test(e.ref))) {
+		return "ref must be a string of up to 64 characters without whitespace";
+	}
 	if (e.sha !== undefined && typeof e.sha !== "string") return "sha must be a string";
 	if (e.at !== undefined && (typeof e.at !== "string" || Number.isNaN(Date.parse(e.at)))) {
 		return "at must be an ISO 8601 time";
@@ -121,6 +125,7 @@ function validateEvidenceInput(value: unknown, now: string): string | undefined 
 function toEvidence(input: EvidenceInput, now: string): Evidence {
 	return {
 		command: input.command,
+		...(input.ref !== undefined ? { ref: input.ref } : {}),
 		...(input.sha !== undefined ? { sha: input.sha } : {}),
 		result: input.result,
 		at: input.at === undefined ? now : new Date(input.at).toISOString(),
@@ -135,6 +140,7 @@ function asCreateItem(value: unknown): TaskMutationParams | undefined {
 function buildCreatedTask(id: number, spec: TaskMutationParams, subject: string, now: string): Task {
 	const newTask: Task = {
 		id,
+		uid: `t_${Array.from(randomBytes(10), byte => "abcdefghijklmnopqrstuvwxyz234567"[byte & 31]).join("")}`,
 		subject,
 		status: "pending",
 	};

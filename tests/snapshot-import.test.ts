@@ -31,7 +31,7 @@ test("import commits one verbatim snapshot and replay restores its tasks and nex
 	} });
 	assert.equal(text(await h.call(params)), "Imported 2 tasks");
 	assert.deepEqual(validations, [[1, 3, "create"], [2, 8, "create"]]);
-	assert.deepEqual(snapshots(h.branch), [snapshot]);
+	assert.deepEqual(snapshots(h.branch), [{ ...snapshot, sessionId: h.sessionId }]);
 	assert.deepEqual(h.events("todo:changed"), [{ v: 1, sessionId: h.sessionId, tasks }]);
 	rmSync(file);
 	const restarted = load({ branch: [{ type: "custom", customType: "todo/v1", data: snapshots(h.branch)[0] }] });
@@ -102,5 +102,5 @@ test("opted-in guard can accept or refuse the whole import as one create", async
 	assert.equal(text(await h.call({ action: "list" })), "No tasks");
 	assert.equal(text(await h.call(params)), "Imported 2 tasks");
 	assert.deepEqual(changes[1], changes[0]);
-	assert.deepEqual(snapshots(h.branch), [snapshot]);
+	assert.deepEqual(snapshots(h.branch), [{ ...snapshot, sessionId: h.sessionId }]);
 });

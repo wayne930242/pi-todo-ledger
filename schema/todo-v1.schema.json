@@ -10,6 +10,7 @@
       "required": ["v", "tasks", "nextId"],
       "properties": {
         "v": { "const": 1 },
+        "sessionId": { "type": "string", "minLength": 1 },
         "tasks": {
           "description": "Every task in id order, including deleted tombstones.",
           "type": "array",
@@ -30,6 +31,8 @@
       "required": ["id", "subject", "status"],
       "properties": {
         "id": { "type": "integer", "minimum": 1 },
+        "uid": { "type": "string", "pattern": "^t_[a-z2-7]{10}$" },
+        "origin": { "type": "object", "required": ["session"], "properties": { "session": { "type": "string", "minLength": 1 } } },
         "subject": { "type": "string" },
         "status": { "$ref": "#/$defs/taskStatus" },
         "description": { "type": "string" },
@@ -72,6 +75,7 @@
       "type": "object",
       "required": ["command", "result", "at"],
       "properties": {
+        "ref": { "type": "string", "maxLength": 64, "pattern": "^\\S*$" },
         "command": {
           "description": "The check that ran.",
           "type": "string",

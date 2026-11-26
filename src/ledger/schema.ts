@@ -16,6 +16,6 @@ export const TODO_V1_SCHEMA: Record<string, unknown> = JSON.parse(readFileSync(S
 const validator = Compile(TODO_V1_SCHEMA as never);
 
 /** True when `value` is valid `todo/v1` entry data. */
-export function isSnapshotV1(value: unknown): value is { v: 1; tasks: Task[]; nextId: number } {
+export function isSnapshotV1(value: unknown): value is { v: 1; sessionId?: string; tasks: Task[]; nextId: number } {
 	return validator.Check(value);
 }

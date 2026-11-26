@@ -32,6 +32,7 @@ export const READY_EVENT = "todo:ready";
 
 /** Data of a `todo/v1` session entry. */
 export interface TodoSnapshotV1 {
+	sessionId?: string;
 	v: 1;
 	tasks: Task[];
 	nextId: number;
@@ -104,8 +105,8 @@ export function copyTasks(tasks: readonly Task[]): Task[] {
 	return structuredClone(tasks) as Task[];
 }
 
-export function toSnapshot(state: TaskState): TodoSnapshotV1 {
-	return { v: CONTRACT_VERSION, tasks: copyTasks(state.tasks), nextId: state.nextId };
+export function toSnapshot(state: TaskState, sessionId: string): TodoSnapshotV1 {
+	return { v: CONTRACT_VERSION, sessionId, tasks: copyTasks(state.tasks), nextId: state.nextId };
 }
 
 export function toChangedEvent(sessionId: string, state: TaskState): TodoChangedEventV1 {
