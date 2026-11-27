@@ -200,7 +200,7 @@ export default function (
 		pi.events.emit(CHANGED_EVENT, toChangedEvent(id, getState(id)));
 	};
 
-	// Collapse/expand hotkey for the todo overlay. The key is resolved once at
+	// Cycle hotkey for the todo overlay (focus → full → collapsed). The key is resolved once at
 	// factory scope from config (register-once contract: a config change needs
 	// `/reload` to re-bind, same as lane-switcher's env hotkey) and the binding is
 	// skipped entirely when collapseKey is "off". The handler closes over the
@@ -211,10 +211,10 @@ export default function (
 	const collapseKey = resolveCollapseKey();
 	if (collapseKey !== COLLAPSE_KEY_OFF) {
 		pi.registerShortcut(collapseKey as KeyId, {
-			description: "Collapse or expand the todo overlay",
+			description: "Cycle the todo overlay: focus, full, collapsed",
 			handler: (ctx) => {
 				if (!ctx.hasUI || !todoOverlay?.isRegistered()) return;
-				todoOverlay.toggleCollapse();
+				todoOverlay.cycleView();
 			},
 		});
 	}

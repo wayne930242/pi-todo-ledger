@@ -36,7 +36,7 @@ async function surfaces(h: Harness, width = 120, overlay = new TodoOverlay(), ex
 	overlay.update();
 	const rows = render(width);
 	render(width);
-	overlay.toggleCollapse();
+	overlay.cycleView();
 	const collapsed = render(width);
 	overlay.dispose();
 	return { rows, collapsed, notification, commandMuted, overlayMuted: muted };
@@ -67,7 +67,7 @@ test("live projection draws only bound runs, then releases the claim on collapse
 	const h = load({branch:[{type:"custom",customType:"todo/v1",data:{v:1,tasks,nextId:65}}]});
 	await h.fire("session_start");
 	const view = await surfaces(h,120,overlay);
-	assert.deepEqual(view.rows,["● Todos (1/4) · fan-out", "├─ ✓ #61 sb 插單規則", "├─ ◐ #62 ledger 0.6.0", "│    └ todograph-build · astra · 執行中 4m", "├─ ◐ #63 sb 計畫圖", "│    ├ todograph-ui · opus · 等 thread 42s", "│    └ todograph-review · sol · 審查中 1m", "└─ ⏸ #64 maestro 研究 等 boss", ""]);
+	assert.deepEqual(view.rows,["● Todos (1/4) · fan-out", "├─ ✓ #61 sb 插單規則", "├─ ◐ #62 ledger 0.6.0", "│    └ todograph-build · astra · 執行中 4m", "├─ ◐ #63 sb 計畫圖", "│    ├ todograph-ui · opus · 等 thread 42s", "│    └ todograph-review · sol · 審查中 1m", "├─ ⏸ #64 maestro 研究 等 boss", "└─ ctrl+shift+t 收合", ""]);
 	assert.deepEqual(claims,[rows.map(([name])=>name),[]]);
 	config({maxWidgetLines:5});
 	claims.length=0;
@@ -130,7 +130,7 @@ test("overlay and /todos nest a chain and a fan-out, show muted owners and share
 	await h.call({ action: "update", id: 1, status: "in_progress" });
 	const view = await surfaces(h);
 	assert.deepEqual(view.rows, ["● Todos (0/5) · fan-out/fan-in", "├─ ◐ #1 Scope @Ari", "├─   ○ #3 API",
-		"├─     ○ #4 Check API", "├─   ○ #5 UI", "└─ ⏸ #2 Approve waits Pat", ""]);
+		"├─     ○ #4 Check API", "├─   ○ #5 UI", "├─ ⏸ #2 Approve waits Pat", "└─ ctrl+shift+t collapse", ""]);
 	assert.equal(view.notification, ["1 in progress · 4 pending · fan-out/fan-in", "  ◐ #1 Scope @Ari", "    ○ #3 API",
 		"      ○ #4 Check API", "    ○ #5 UI", "  ⏸ #2 Approve waits Pat"].join("\n"));
 	for (const calls of [view.commandMuted, view.overlayMuted]) assert.ok(calls.some(s => s.includes("@Ari")));

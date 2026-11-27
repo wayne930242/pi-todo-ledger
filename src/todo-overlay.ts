@@ -3,8 +3,8 @@
  *
  * Lifecycle controller for Pi's `setWidget` contract: factory-form
  * registration in widgetContainerAbove, register-once + requestRender()
- * refresh, configurable collapse-not-scroll (default 12 content rows via
- * getMaxWidgetLines(); plus a trailing spacer row so the widget renders up
+ * refresh, a cycle key (focus → full → collapsed), configurable
+ * collapse-not-scroll (default 12 content rows via getMaxWidgetLines(); plus a trailing spacer row so the widget renders up
  * to 13 lines), Pi tool-output expansion awareness, auto-hide when empty.
  *
  * Reads live state via `getRenderState()` (the ctx-less foreground slot) at render
@@ -25,6 +25,7 @@ import {
 	COLLAPSE_KEY_OFF,
 	getMaxWidgetLines,
 	getView,
+	type OverlayView,
 	resolveCollapseKey,
 } from "./config.ts";
 import { formatStatusLabel, t } from "./state/i18n-bridge.ts";
@@ -47,9 +48,16 @@ const WIDGET_KEY = "rpiv-todos";
 // English fallbacks for localized overlay chrome strings.
 const OVERLAY_HEADING = "Todos";
 const OVERLAY_MORE = "more";
-const OVERLAY_EXPAND_HINT = "{key} to expand";
+const OVERLAY_KEY_HINT = "{key} {next}";
 const OVERLAY_COLLAPSED = "collapsed";
 const OVERLAY_SEPARATOR = ", ";
+
+/** What the panel shows: one of the two views, or the two-line collapsed state. */
+type PanelState = OverlayView | "collapsed";
+/** The cycle key's order, from any starting state. */
+const NEXT_STATE: Record<PanelState, PanelState> = { focus: "full", full: "collapsed", collapsed: "focus" };
+/** English names of the state the key goes to next, as the hint shows them. */
+const NEXT_STATE_NAME: Record<PanelState, string> = { focus: "focus", full: "full", collapsed: "collapse" };
 
 /** What one frame's row drawing needs, shared by the full and focus views. */
 interface DrawContext {
@@ -70,7 +78,8 @@ export class TodoOverlay {
 	private completedTaskIdsPendingHide = new Set<number>();
 	private hiddenCompletedTaskIds = new Set<number>();
 	private lastNextId: number | undefined;
-	private collapsed = false;
+	/** Set by the cycle key; until then the panel follows the configured `view`. */
+	private state?: PanelState;
 
 	private previous: string[] = [];
 	private claimed: string[] = [];
@@ -251,14 +260,44 @@ export class TodoOverlay {
 		this.tui?.requestRender();
 	}
 
-	toggleCollapse(): void {
-		this.collapsed = !this.collapsed;
+	private current(): PanelState {
+		return this.state ?? getView();
+	}
+
+	/** Step the panel to the next state: focus → full → collapsed → focus. */
+	cycleView(): void {
+		this.state = NEXT_STATE[this.current()];
 		// Release before the redraw: the host may draw its widget first in that frame.
-		if (this.collapsed) this.finishFrame([]);
-		// Forced full redraw on the collapsed↔expanded height step, mirroring the
+		if (this.state === "collapsed") this.finishFrame([]);
+		// Forced full redraw on every height step, mirroring the
 		// lane-dock's requestRender(shapeChanged); distinct from the non-forced
 		// requestRender() refresh paths in update()/hideCompletedTasksFromPreviousTurn().
 		this.tui?.requestRender(true);
+	}
+
+	/**
+	 * The dim key hint naming the next state, e.g. `ctrl+shift+t full`, or
+	 * undefined when the key is "off". The key is resolved per render; a config
+	 * edit needs /reload to re-bind the actual shortcut.
+	 */
+	private keyHint(): string | undefined {
+		const key = resolveCollapseKey();
+		if (key === COLLAPSE_KEY_OFF) return undefined;
+		const next = NEXT_STATE[this.current()];
+		const name = t(`overlay.next.${next}`, NEXT_STATE_NAME[next]);
+		return t("overlay.keyHint", OVERLAY_KEY_HINT).replace(/\{(key|next)\}/g, (_m, k: string) => (k === "key" ? key : name));
+	}
+
+	/**
+	 * The closing `└─` row: the summary, then ` · ` and the key hint when both fit
+	 * the width (the hint is cut first), or the hint alone.
+	 */
+	private closingRow(draw: DrawContext, summary: string | undefined, hint: string | undefined): string {
+		const { theme, width, truncate } = draw;
+		const row = (text: string) => `${theme.fg("dim", "└─")} ${theme.fg("dim", text)}`;
+		if (summary === undefined) return truncate(row(hint ?? ""));
+		const both = hint ? row(`${summary} · ${hint}`) : undefined;
+		return both && visibleWidth(both) <= width ? both : truncate(row(summary));
 	}
 
 	isRegistered(): boolean {
@@ -315,7 +354,7 @@ export class TodoOverlay {
 		const hasRuns = [...bound.values()].some((h) => h.runs.length > 0);
 		// Ask the host only when some todo has bound runs and the tree is shown.
 		const live =
-			hasRuns && !this.collapsed ? liveRows(this.query) : undefined;
+			hasRuns && this.current() !== "collapsed" ? liveRows(this.query) : undefined;
 
 		const plan = planView(overlayTasks);
 		// Keep completed rows in their old slots; fill open slots in display order before budgeting.
@@ -340,22 +379,16 @@ export class TodoOverlay {
 			`${theme.fg(headingColor, headingIcon)} ${theme.fg(headingColor, headingText)}${graph}`,
 		);
 
-		// Collapsed view: just the heading + a dim "└─" expand hint, then the
-		// trailing spacer. Short-circuit before the budget math and the completed-
-		// display tracking — nothing is shown to track, and skipping the tracking
-		// when nothing is rendered is correctness, not optimization. The hint splices
-		// the resolved key into the {key} placeholder (per-render, like the row
-		// budget); a config edit needs /reload to re-bind the actual shortcut. The
+		// Collapsed view: just the heading + a dim "└─" hint naming the next state,
+		// then the trailing spacer. Short-circuit before the budget math and the
+		// completed-display tracking — nothing is shown to track, and skipping the
+		// tracking when nothing is rendered is correctness, not optimization. The
 		// "off" sentinel is reachable here mid-session (config edited after the
 		// shortcut was bound and the overlay collapsed) — render a static collapsed
-		// label instead of splicing the sentinel into the placeholder.
-		if (this.collapsed) {
+		// label instead of advertising an unbound key.
+		if (this.current() === "collapsed") {
 			this.finishFrame([]);
-			const key = resolveCollapseKey();
-			const hint =
-				key === COLLAPSE_KEY_OFF
-					? t("overlay.collapsed", OVERLAY_COLLAPSED)
-					: t("overlay.expandHint", OVERLAY_EXPAND_HINT).replace("{key}", key);
+			const hint = this.keyHint() ?? t("overlay.collapsed", OVERLAY_COLLAPSED);
 			return this.withTrailingSpacer([
 				heading,
 				truncate(`${theme.fg("dim", "└─")} ${theme.fg("dim", hint)}`),
@@ -382,7 +415,7 @@ export class TodoOverlay {
 			evidence: this.evidence(),
 		};
 		const body =
-			getView() === "full"
+			this.current() === "full"
 				? this.fullBody(overlayState, plan, bodyBudget, draw)
 				: this.focusBody(overlayTasks, plan, bodyBudget, draw);
 
@@ -407,16 +440,20 @@ export class TodoOverlay {
 		bodyBudget: number,
 		draw: DrawContext,
 	): string[] {
-		const { theme, truncate } = draw;
 		const layout = selectOverlayLayout(overlayState, bodyBudget);
 		const overflow = layout.hiddenCompleted + layout.truncatedTail;
-		const spare = bodyBudget - layout.visible.length - Number(overflow > 0);
+		const hint = this.keyHint();
+		// With nothing to summarize, the hint takes its own row only when one is spare.
+		const needed = layout.visible.reduce((n, task) => n + 1 + this.children(task, draw).length, 0);
+		const hintRow = overflow === 0 && hint !== undefined && needed < bodyBudget;
+		const spare = bodyBudget - layout.visible.length - Number(overflow > 0 || hintRow);
 		const lines = this.drawTasks(
 			layout.visible.map((task) => ({ task, row: plan.rows.get(task.id) })),
 			spare,
-			overflow === 0,
+			overflow === 0 && !hintRow,
 			draw,
 		);
+		if (hintRow) lines.push(this.closingRow(draw, undefined, hint));
 		if (overflow === 0) return lines;
 
 		const overflowParts: string[] = [];
@@ -433,9 +470,7 @@ export class TodoOverlay {
 			overflowParts.length > 0
 				? `+${overflow} ${more} (${overflowParts.join(", ")})`
 				: `+${overflow} ${more}`;
-		lines.push(
-			truncate(`${theme.fg("dim", "└─")} ${theme.fg("dim", summary)}`),
-		);
+		lines.push(this.closingRow(draw, summary, hint));
 		return lines;
 	}
 
@@ -451,7 +486,6 @@ export class TodoOverlay {
 		bodyBudget: number,
 		draw: DrawContext,
 	): string[] {
-		const { theme, truncate } = draw;
 		const inProgress = plan.ordered.filter((t) => t.status === "in_progress");
 		const pending = plan.ordered.filter((t) => t.status === "pending");
 		const completed = overlayTasks.filter((t) => t.status === "completed");
@@ -468,11 +502,16 @@ export class TodoOverlay {
 				if (n <= spare) spare -= n;
 			}
 			const done = completed.slice(0, spare);
-			return { core, done, spare: slots - core.length - done.length };
+			return { core, done, spare: slots - core.length - done.length, left: spare - done.length };
 		};
 		let shown = fit(bodyBudget);
 		let summarized = shown.core.length + shown.done.length < total;
 		if (summarized) shown = fit(bodyBudget - 1);
+		// With nothing to summarize, the hint takes its own row only when one is spare;
+		// one row less leaves the same layout then.
+		const hint = this.keyHint();
+		const hintRow = !summarized && hint !== undefined && shown.left > 0;
+		if (hintRow) shown = { ...shown, spare: shown.spare - 1 };
 
 		const openIds = new Set(plan.ordered.map((t) => t.id));
 		const flat = (task: Task): PlanRow | undefined => {
@@ -488,9 +527,10 @@ export class TodoOverlay {
 		const lines = this.drawTasks(
 			[...shown.core, ...shown.done].map((task) => ({ task, row: flat(task) })),
 			shown.spare,
-			!summarized,
+			!summarized && !hintRow,
 			draw,
 		);
+		if (hintRow) lines.push(this.closingRow(draw, undefined, hint));
 		if (!summarized) return lines;
 
 		const isShown = new Set([...shown.core, ...shown.done]);
@@ -505,9 +545,7 @@ export class TodoOverlay {
 			.filter(([n]) => n > 0)
 			.map(([n, status]) => `${n} ${formatStatusLabel(status)}`);
 		const summary = `+${parts.join(t("overlay.separator", OVERLAY_SEPARATOR))}`;
-		lines.push(
-			truncate(`${theme.fg("dim", "└─")} ${theme.fg("dim", summary)}`),
-		);
+		lines.push(this.closingRow(draw, summary, hint));
 		return lines;
 	}
 
@@ -596,7 +634,7 @@ export class TodoOverlay {
 		this.widgetRegistered = false;
 		this.tui = undefined;
 		this.uiCtx = undefined;
-		this.collapsed = false;
+		this.state = undefined;
 		this.resetCompletedDisplayState();
 	}
 }

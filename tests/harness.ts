@@ -24,6 +24,8 @@ export interface Harness {
 	emit(channel: string, data: unknown): void;
 	/** Events emitted on one channel. */
 	events(channel: string): unknown[];
+	/** Keys the extension bound with `registerShortcut`, in order. */
+	shortcuts: string[];
 }
 
 let sessionCounter = 0;
@@ -50,6 +52,7 @@ export function load(
 	const sessionId = options.sessionId ?? `test-session-${++sessionCounter}`;
 	const branch = options.branch ?? [];
 	const emitted: Harness["emitted"] = [];
+	const shortcuts: string[] = [];
 
 	const ctx = {
 		hasUI: false,
@@ -63,7 +66,9 @@ export function load(
 			tool = definition;
 		},
 		registerCommand: () => {},
-		registerShortcut: () => {},
+		registerShortcut: (key: string) => {
+			shortcuts.push(key);
+		},
 		appendEntry: (customType: string, data: unknown) => {
 			if (options.failAppend?.()) throw new Error("disk full");
 			branch.push({ type: "custom", customType, data });
@@ -86,6 +91,7 @@ export function load(
 	const harness: Harness = {
 		branch,
 		emitted,
+		shortcuts,
 		bus,
 		sessionId,
 		ctx,

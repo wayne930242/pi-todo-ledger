@@ -76,7 +76,7 @@ test("focus view (default): the boss's example, in zh-TW", async (ctx) => {
 		"│    └ fixture-test · astra · 執行中 6s",
 		"├─ ○ #1 檢查畫面",
 		"├─ ○ #2 確認版面",
-		"└─ +5 待處理",
+		"└─ +5 待處理 · ctrl+shift+t 完整",
 		"",
 	]);
 	m.overlay.dispose();
@@ -85,10 +85,10 @@ test("focus view (default): the boss's example, in zh-TW", async (ctx) => {
 test("focus view without an in-progress task lists the next three open tasks", async (ctx) => {
 	env(ctx);
 	const six = await mount([1, 2, 3, 4, 5, 6].map((id) => task(id)));
-	assert.deepEqual(six.render(), ["● Todos (0/6)", "├─ ○ t1", "├─ ○ t2", "├─ ○ t3", "└─ +3 pending", ""]);
+	assert.deepEqual(six.render(), ["● Todos (0/6)", "├─ ○ t1", "├─ ○ t2", "├─ ○ t3", "└─ +3 pending · ctrl+shift+t full", ""]);
 	six.overlay.dispose();
 	const three = await mount([1, 2, 3].map((id) => task(id)));
-	assert.deepEqual(three.render(), ["● Todos (0/3)", "├─ ○ t1", "├─ ○ t2", "└─ ○ t3", ""], "nothing hidden, no summary");
+	assert.deepEqual(three.render(), ["● Todos (0/3)", "├─ ○ t1", "├─ ○ t2", "├─ ○ t3", "└─ ctrl+shift+t full", ""], "nothing hidden: the hint takes the closing row");
 	three.overlay.dispose();
 });
 
@@ -105,7 +105,7 @@ test("focus view keeps waiting and blocker marks on flat rows", async (ctx) => {
 		"├─ ◐ #1 Scope",
 		"├─ ⏸ #2 Approve waits Pat ⛓ #1",
 		"├─ ○ #3 Ship ⛓ #1,#2",
-		"└─ +1 pending",
+		"└─ +1 pending · ctrl+shift+t full",
 		"",
 	]);
 	m.overlay.dispose();
@@ -114,7 +114,7 @@ test("focus view keeps waiting and blocker marks on flat rows", async (ctx) => {
 test("maxWidgetLines=3 with four in-progress tasks: the rest go into the summary", async (ctx) => {
 	env(ctx, { maxWidgetLines: 3 });
 	const m = await mount([1, 2, 3, 4].map((id) => task(id, "in_progress")));
-	assert.deepEqual(m.render(), ["● Todos (0/4)", "├─ ◐ t1", "└─ +3 in progress", ""]);
+	assert.deepEqual(m.render(), ["● Todos (0/4)", "├─ ◐ t1", "└─ +3 in progress · ctrl+shift+t full", ""]);
 	m.overlay.dispose();
 });
 
@@ -130,7 +130,7 @@ test("several in-progress tasks with runs over the budget fold runs and summariz
 		"├─ ◐ #2 t2 · 2 runs",
 		"├─ ○ #3 t3",
 		"├─ ○ #4 t4",
-		"└─ +1 pending",
+		"└─ +1 pending · ctrl+shift+t full",
 		"",
 	]);
 	assert.equal(rows.length - 1, 7, "the cap holds");
@@ -148,7 +148,7 @@ test("the summary counts hidden in-progress, pending and completed tasks, in zh-
 		"● Todos (2/10)",
 		"├─ ◐ #1 t1 · 1 個工作階段",
 		"├─ ◐ #2 t2 · 1 個工作階段",
-		"└─ +1 進行中、5 待處理、2 已完成",
+		"└─ +1 進行中、5 待處理、2 已完成 · ctrl+shift+t 完整",
 		"",
 	]);
 	m.overlay.dispose();
@@ -158,13 +158,13 @@ test("a completed row from this turn shows only when the budget allows, and leav
 	env(ctx);
 	const tasks = [task(1, "completed"), task(2, "in_progress"), task(3)];
 	const roomy = await mount(tasks);
-	assert.deepEqual(roomy.render(), ["● Todos (1/3)", "├─ ◐ t2", "├─ ○ t3", "└─ ✓ t1", ""]);
+	assert.deepEqual(roomy.render(), ["● Todos (1/3)", "├─ ◐ t2", "├─ ○ t3", "├─ ✓ t1", "└─ ctrl+shift+t full", ""]);
 	roomy.overlay.dispose();
 	const dir = process.env.XDG_CONFIG_HOME!;
 	mkdirSync(join(dir, "pi-todo-ledger"), { recursive: true });
 	writeFileSync(join(dir, "pi-todo-ledger", "config.json"), JSON.stringify({ maxWidgetLines: 3 }));
 	const tight = await mount(tasks);
-	assert.deepEqual(tight.render(), ["● Todos (1/3)", "├─ ◐ t2", "└─ +1 pending, 1 completed", ""]);
+	assert.deepEqual(tight.render(), ["● Todos (1/3)", "├─ ◐ t2", "└─ +1 pending, 1 completed · ctrl+shift+t full", ""]);
 	tight.overlay.hideCompletedTasksFromPreviousTurn();
 	assert.deepEqual(tight.render(), ["● Todos (0/2)", "├─ ◐ t2", "└─ ○ t3", ""], "a faded row leaves the heading too, as in the full view");
 	tight.overlay.dispose();
@@ -176,14 +176,15 @@ test('"view": "full" renders today\'s tree unchanged; an unknown value means foc
 	assert.deepEqual(m.render(), [
 		"● Todos (0/8)",
 		...BOSS.slice(0, 7).map((s, i) => `├─ ○ #${i + 1} ${s}`),
-		"└─ ◐ #8 執行等待",
-		"     └ fixture-test · astra · 執行中 6s",
+		"├─ ◐ #8 執行等待",
+		"│    └ fixture-test · astra · 執行中 6s",
+		"└─ ctrl+shift+t 收合",
 		"",
 	]);
 	m.overlay.dispose();
 	writeFileSync(join(process.env.XDG_CONFIG_HOME!, "pi-todo-ledger", "config.json"), JSON.stringify({ view: "tree" }));
 	const unknown = await mount(bossTasks(), [run("fixture-test", 6)]);
-	assert.equal(unknown.render().at(-2), "└─ +5 待處理");
+	assert.equal(unknown.render().at(-2), "└─ +5 待處理 · ctrl+shift+t 完整");
 	unknown.overlay.dispose();
 });
 
@@ -216,7 +217,8 @@ for (const view of ["focus", "full"]) {
 			{ ...task(2, "in_progress"), subject: "補測試", activeForm: "撰寫測試中" },
 		]);
 		const rows = m.render();
-		assert.deepEqual(rows, ["● Todos (0/2)", "├─ ◐ 執行等待", "└─ ◐ 補測試 (撰寫測試中)", ""]);
+		const hint = view === "focus" ? "└─ ctrl+shift+t 完整" : "└─ ctrl+shift+t 收合";
+		assert.deepEqual(rows, ["● Todos (0/2)", "├─ ◐ 執行等待", "├─ ◐ 補測試 (撰寫測試中)", hint, ""]);
 		m.overlay.dispose();
 	});
 }
@@ -234,7 +236,8 @@ test("idle and waiting run rows carry a mark and a status word on their one row,
 		"├─ ◐ #1 t1",
 		"│    ├ ◇ fixture-test · astra · 閒置 3m",
 		"│    └ ? x · sol · 等待回覆 42s",
-		"└─ ○ #2 t2",
+		"├─ ○ #2 t2",
+		"└─ ctrl+shift+t 完整",
 		"",
 	]);
 	assert.deepEqual(colors, ["dim", "warning"], "idle is dim; waiting stands out, its tree prefix stays dim");

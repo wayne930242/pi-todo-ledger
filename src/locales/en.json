@@ -6,7 +6,10 @@
 
   "overlay.heading": "Todos",
   "overlay.more": "more",
-  "overlay.expandHint": "{key} to expand",
+  "overlay.keyHint": "{key} {next}",
+  "overlay.next.focus": "focus",
+  "overlay.next.full": "full",
+  "overlay.next.collapsed": "collapse",
   "overlay.collapsed": "collapsed",
   "overlay.separator": ", ",
 

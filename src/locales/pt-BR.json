@@ -8,7 +8,10 @@
 
   "overlay.heading": "Tarefas",
   "overlay.more": "mais",
-  "overlay.expandHint": "{key} para expandir",
+  "overlay.keyHint": "{key} {next}",
+  "overlay.next.focus": "foco",
+  "overlay.next.full": "completo",
+  "overlay.next.collapsed": "recolher",
   "overlay.collapsed": "recolhido",
 
   "command.no_todos": "Nenhuma tarefa ainda. Peça ao agente para adicionar algumas!",

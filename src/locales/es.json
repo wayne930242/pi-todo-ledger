@@ -8,7 +8,10 @@
 
   "overlay.heading": "Tareas",
   "overlay.more": "más",
-  "overlay.expandHint": "{key} para expandir",
+  "overlay.keyHint": "{key} {next}",
+  "overlay.next.focus": "enfoque",
+  "overlay.next.full": "completo",
+  "overlay.next.collapsed": "contraer",
   "overlay.collapsed": "contraído",
 
   "command.no_todos": "Sin tareas aún. ¡Pídele al agente que añada algunas!",

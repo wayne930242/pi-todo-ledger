@@ -8,7 +8,10 @@
 
   "overlay.heading": "Todos",
   "overlay.more": "weitere",
-  "overlay.expandHint": "{key} zum Ausklappen",
+  "overlay.keyHint": "{key} {next}",
+  "overlay.next.focus": "Fokus",
+  "overlay.next.full": "voll",
+  "overlay.next.collapsed": "einklappen",
   "overlay.collapsed": "eingeklappt",
 
   "command.no_todos": "Noch keine Todos. Bitte den Agenten, welche hinzuzufügen!",

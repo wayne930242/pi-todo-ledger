@@ -52,6 +52,9 @@ The extension never writes this file — you create and edit it yourself.
 - `"full"` shows the whole dependency tree, as releases up to 0.6.0 did.
 - Any other value, or none, means `"focus"`.
 - Read fresh on every render, like `maxWidgetLines`, so no `/reload`.
+- It sets the starting state only. The `collapseKey` shortcut then cycles
+  focus → full → collapsed from there, and the chosen state holds for the rest
+  of the session.
 
 [overlay.md](./overlay.md#focus-view) describes both layouts.
 
@@ -72,8 +75,10 @@ blank spacer sits outside the budget, so `12` renders up to 13 terminal rows.
 
 ## `collapseKey`
 
-**Default `"ctrl+shift+t"`.** The shortcut that collapses and expands the
-overlay.
+**Default `"ctrl+shift+t"`.** The shortcut that cycles the overlay through
+the focus view, the full view, and the collapsed state, in that order, starting
+from `view`. Each state shows a dim hint with this key and the next state; see
+[overlay.md](./overlay.md#switching-views).
 
 The value is trimmed and lowercased, then matched against Pi's keybinding
 grammar: zero or more distinct modifiers joined by `+`, then a base key.
@@ -90,11 +95,10 @@ Examples: `alt+o`, `ctrl+shift+t`, `super+alt+f5`.
   default. The grammar is checked strictly on purpose: Pi takes the last `+`-part
   as the base key and ignores unknown parts, so a typo like `ctr+]` would
   otherwise capture every bare `]` keypress globally.
-- `"off"` disables the feature — no shortcut is registered at all.
+- `"off"` disables the feature: no shortcut is registered and no hint is shown.
 - The binding is resolved **once at extension load**. After editing this value,
   run `/reload` to rebind; until you do, the old key stays active even though the
-  collapsed panel's hint text (which is resolved per render) already shows the
-  new one.
+  panel's hint text (which is resolved per render) already shows the new one.
 
 ## Guidance
 

@@ -31,7 +31,7 @@ The panel opens in the focus view. It shows what is being worked on and what com
 │    └ fixture-test · astra · 執行中 6s
 ├─ ○ #1 檢查畫面
 ├─ ○ #2 確認版面
-└─ +5 待處理
+└─ +5 待處理 · ctrl+shift+t 完整
 ```
 
 Rows come in this order, until the row budget runs out:
@@ -42,9 +42,11 @@ Rows come in this order, until the row budget runs out:
 4. completed tasks from the current turn, only if rows are left after the run rows;
 5. one summary row counting the hidden tasks in progress, pending, and completed, in that order, such as `+1 in progress, 5 pending, 2 completed` (`+1 進行中、5 待處理、2 已完成` in zh-TW). Zero counts are left out, and with nothing hidden there is no summary row.
 
+The summary row ends with a dim hint that names the panel key and the state it switches to next; see [Switching views](#switching-views).
+
 `maxWidgetLines` is a hard cap here too: tasks in progress that do not fit are counted in the summary, and run rows that do not fit fold into `· N runs`.
 Rows are flat, so the `⛓` tail lists every unfinished blocker of a task; `⏸`, owners, and the other marks are the same as in the full view.
-Pi's tool-output expansion mode lifts the row cap but keeps this selection. Set `"view": "full"` (see [configuration.md](./configuration.md#view)) for the tree below, or use `/todos` to see everything once.
+Pi's tool-output expansion mode lifts the row cap but keeps this selection. Press the panel key for the tree below, set `"view": "full"` (see [configuration.md](./configuration.md#view)) to start there, or use `/todos` to see everything once.
 
 ## Anatomy of a row
 
@@ -56,7 +58,8 @@ The full view (`"view": "full"`) draws the whole dependency tree:
 ├─   ○ #3 API
 ├─     ○ #4 Check API
 ├─   ○ #5 UI
-└─ ⏸ #2 Approve waits Pat
+├─ ⏸ #2 Approve waits Pat
+└─ ctrl+shift+t collapse
 ```
 
 - **Heading** — `● Todos (done/total)` in the accent color while any task is
@@ -122,16 +125,37 @@ completed. At the start of the next agent turn, every completed row that has
 already been displayed is hidden from later renders. Reloading or compacting the
 session resets that tracking, so a fresh session shows the full list again.
 
-## Collapsing
+## Switching views
 
-Press `ctrl+shift+t` to collapse the panel to two lines — the heading plus a dim
-`└─ ctrl+shift+t to expand` hint — and again to expand it. The hint always shows
-the currently configured key.
+`ctrl+shift+t` steps the panel through three states, always in this order:
+
+1. focus view;
+2. full view;
+3. collapsed: the heading and one dim hint row, `└─ ctrl+shift+t focus`.
+
+The panel starts in the state `view` names, `"focus"` unless you set `"full"`,
+and the next press continues the cycle from there: from `"full"` it goes to
+collapsed, then focus, then full again. The chosen state holds until the next
+press or the end of the session.
+
+Each state shows a dim hint naming the key and the next state: `ctrl+shift+t
+full`, `ctrl+shift+t collapse`, `ctrl+shift+t focus` (`完整`, `收合`, `焦點` in
+zh-TW). In the focus and full views the hint ends the summary row after a ` · `.
+It is the first thing cut when the row is too narrow. With nothing to summarize,
+the hint takes its own closing `└─` row, and only when the row budget has a row
+to spare, so it never pushes a task out. The hint always shows the configured
+key.
+
+Collapsing hides the run rows, so the panel releases its claim on them; the
+Subagents widget can show them again. In the focus and full views the panel
+claims the run rows it actually paints, as described under
+[Worker runs under a task](#worker-runs-under-a-task).
 
 Rebind or disable the shortcut with the `collapseKey` option; see
-[configuration.md](./configuration.md#collapsekey). If the shortcut is set to
-`"off"` while the panel is collapsed, the hint becomes a static `collapsed`
-label rather than advertising an unbindable key.
+[configuration.md](./configuration.md#collapsekey). With `"off"` no hint is
+shown. If the shortcut is set to `"off"` while the panel is collapsed, the
+collapsed row becomes a static `collapsed` label rather than advertising an
+unbindable key.
 
 ## `/todos`
 
@@ -155,7 +179,7 @@ tasks. Tombstoned tasks are never listed.
 
 ## Localization
 
-The overlay heading, both summary rows, the collapse hint, the `/todos`
+The overlay heading, both summary rows, the key hint, the `/todos`
 section headers, and the status words all localize through
 [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n)
 when that package is installed. Bundled locales: `de`, `en`, `es`, `fr`, `pt`,

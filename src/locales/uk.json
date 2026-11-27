@@ -8,7 +8,10 @@
 
   "overlay.heading": "Завдання",
   "overlay.more": "ще",
-  "overlay.expandHint": "{key} — розгорнути",
+  "overlay.keyHint": "{key} {next}",
+  "overlay.next.focus": "фокус",
+  "overlay.next.full": "повністю",
+  "overlay.next.collapsed": "згорнути",
   "overlay.collapsed": "згорнуто",
 
   "command.no_todos": "Завдань поки немає. Попросіть агента додати!",

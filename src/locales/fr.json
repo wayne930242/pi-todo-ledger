@@ -8,7 +8,10 @@
 
   "overlay.heading": "Tâches",
   "overlay.more": "autres",
-  "overlay.expandHint": "{key} pour développer",
+  "overlay.keyHint": "{key} {next}",
+  "overlay.next.focus": "focus",
+  "overlay.next.full": "complet",
+  "overlay.next.collapsed": "réduire",
   "overlay.collapsed": "réduit",
 
   "command.no_todos": "Pas encore de tâches. Demandez à l'agent d'en ajouter !",

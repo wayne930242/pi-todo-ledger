@@ -8,7 +8,10 @@
 
   "overlay.heading": "Задачи",
   "overlay.more": "ещё",
-  "overlay.expandHint": "{key} — развернуть",
+  "overlay.keyHint": "{key} {next}",
+  "overlay.next.focus": "фокус",
+  "overlay.next.full": "полностью",
+  "overlay.next.collapsed": "свернуть",
   "overlay.collapsed": "свёрнуто",
 
   "command.no_todos": "Задач пока нет. Попросите агента добавить!",

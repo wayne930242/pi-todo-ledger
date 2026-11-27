@@ -117,9 +117,9 @@ Without one, the extension reads `rpiv-todo/config.json` from the same directori
 
 | Setting | What it does | Default |
 | --- | --- | --- |
-| `view` | `"focus"` lists the tasks in progress and the next open ones, and folds the rest into one summary row. `"full"` shows the whole dependency tree. | `"focus"` |
+| `view` | The panel's starting state. `"focus"` lists the tasks in progress and the next open ones, and folds the rest into one summary row. `"full"` shows the whole dependency tree. | `"focus"` |
 | `maxWidgetLines` | Content rows the panel may use, heading included. Minimum `3`. Pi's tool-output expansion mode lifts the limit. | `12` |
-| `collapseKey` | Key that collapses and expands the panel, in pi keybinding form (`alt+o`, `ctrl+shift+t`). `"off"` registers no shortcut. Needs `/reload` to rebind. | `"ctrl+shift+t"` |
+| `collapseKey` | Key that cycles the panel focus → full → collapsed → focus, starting from `view`, in pi keybinding form (`alt+o`, `ctrl+shift+t`). A dim hint such as `+5 pending · ctrl+shift+t full` names the next state. `"off"` registers no shortcut and shows no hint. Needs `/reload` to rebind. | `"ctrl+shift+t"` |
 | `guidance` | Replaces the built-in instructions the extension gives the model about the todo list (`promptSnippet`, `promptGuidelines`). Needs `/reload`. | built-ins |
 
 More detail: [Configuration](docs/configuration.md), [`todo` tool reference](docs/tool-schema.md), [Panel and `/todos`](docs/overlay.md).

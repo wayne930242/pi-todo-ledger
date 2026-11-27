@@ -96,7 +96,7 @@ interface TodoConfig {
 	guidance?: GuidanceFields;
 	maxWidgetLines?: number;
 	/**
-	 * Key spec for the overlay collapse/expand shortcut, in the same format as
+	 * Key spec for the overlay cycle shortcut (focus → full → collapsed), in the same format as
 	 * pi-coding-agent keybinding ids (`modifier+key`, e.g. `ctrl+shift+t`, `alt+o`).
 	 * Defaults to `"ctrl+shift+t"`. Pass `"off"` to disable the collapse shortcut
 	 * entirely. Validation happens in `resolveCollapseKey`, not at load.

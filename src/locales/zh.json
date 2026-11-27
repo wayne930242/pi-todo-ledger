@@ -8,7 +8,10 @@
 
   "overlay.heading": "任务清单",
   "overlay.more": "更多",
-  "overlay.expandHint": "按 {key} 展开",
+  "overlay.keyHint": "{key} {next}",
+  "overlay.next.focus": "焦点",
+  "overlay.next.full": "完整",
+  "overlay.next.collapsed": "收起",
   "overlay.collapsed": "已折叠",
   "overlay.separator": "、",
 

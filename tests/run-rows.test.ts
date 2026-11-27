@@ -161,6 +161,7 @@ test("a host without a mode gives no visibility evidence, so nothing is claimed"
 
 test("collapse releases the claim before it asks for the redraw", async () => {
 	const m = await mount({ mode: "regular" });
+	m.overlay.cycleView(); // focus → full; the next press collapses
 	m.widget.render(80);
 	m.widget.render(80);
 	const before = m.claims().length;
@@ -168,7 +169,7 @@ test("collapse releases the claim before it asks for the redraw", async () => {
 	let releasedFirst = false;
 	const orig = m.redraws.push.bind(m.redraws);
 	m.redraws.push = (...v: boolean[]) => { releasedFirst = m.claims().length > before && m.claims().at(-1)!.length === 0; return orig(...v); };
-	m.overlay.toggleCollapse();
+	m.overlay.cycleView();
 	assert.ok(releasedFirst, "release sent before requestRender(true)");
 	const sent = m.probes.length;
 	m.widget.render(80);
