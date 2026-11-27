@@ -58,7 +58,12 @@ export class TodoOverlay {
 	private collapsed = false;
 
 	private previous: string[] = [];
-	private claimed = false;
+	private claimed: string[] = [];
+	/** Markers of the run rows drawn on the frame being painted, awaiting the screen check. */
+	private onScreen?: Map<string, string>;
+	private screenCheckQueued = false;
+	private markers = new Map<string, string>();
+	private readonly nonce = Math.random().toString(36).slice(2, 10);
 	private tick?: ReturnType<typeof setInterval>;
 	private query?: Query;
 	constructor(query?: Query) {
@@ -67,8 +72,8 @@ export class TodoOverlay {
 
 	private sendClaim(ids: string[]) {
 		// An empty claim is a release; send it only to retract an earlier claim.
-		if (!ids.length && !this.claimed) return;
-		this.claimed = ids.length > 0;
+		if (!ids.length && !this.claimed.length) return;
+		this.claimed = ids;
 		try {
 			this.query?.({ claim: { by: "pi-todo-ledger", ids } });
 		} catch {
@@ -77,18 +82,84 @@ export class TodoOverlay {
 	}
 
 	/**
-	 * Whether a drawn line reaches the screen. Pi's regular (inline) renderer
-	 * writes every widget line; the fullscreen layout may clip the widget after
-	 * render() returns, which the widget cannot observe, so it gives no evidence.
+	 * How the panel learns that a drawn run row reached the screen.
+	 * - `inline`: Pi's regular renderer writes every widget line.
+	 * - `screen`: Pi's fullscreen layout clips the widget after render() returns,
+	 *   so each run row carries a marker and the painted frame is searched for it.
+	 * - `undefined`: no evidence; nothing is claimed.
 	 */
-	private linesReachScreen(): boolean {
-		return (this.tui as { mode?: string } | undefined)?.mode === "regular";
+	private evidence(): "inline" | "screen" | undefined {
+		const tui = this.tui as
+			| { mode?: string; getScreenLines?: unknown }
+			| undefined;
+		if (tui?.mode === "regular") return "inline";
+		if (tui?.mode === "fullscreen" && typeof tui.getScreenLines === "function")
+			return "screen";
+		return undefined;
 	}
 
-	private finishFrame(ids: string[], ticking = ids.length > 0) {
-		// Only renew claims for children visible on both this and the preceding frame.
-		this.sendClaim(this.previous.filter((id) => ids.includes(id)));
-		this.previous = ids;
+	/**
+	 * A zero-width marker unique to this panel and run: an OSC 8 hyperlink close
+	 * with an `id` parameter. Pi already ends every row with an OSC 8 close, and
+	 * its layout keeps escape sequences of the rows it paints, so the marker is on
+	 * the painted screen exactly when the row is.
+	 */
+	private marker(id: string): string {
+		let m = this.markers.get(id);
+		if (!m) {
+			m = `\x1b]8;id=pi-todo-ledger-${this.nonce}-${this.markers.size};\x07`;
+			this.markers.set(id, m);
+		}
+		return m;
+	}
+
+	/**
+	 * Claim the rows whose marker is on the frame Pi just painted. render() runs
+	 * inside Pi's synchronous frame, so a microtask reads that frame's screen.
+	 * A changed claim asks for one more frame so the Subagents widget follows.
+	 */
+	private checkScreen(markers: Map<string, string>) {
+		this.onScreen = markers;
+		if (this.screenCheckQueued) return;
+		this.screenCheckQueued = true;
+		queueMicrotask(() => {
+			this.screenCheckQueued = false;
+			const pending = this.onScreen;
+			this.onScreen = undefined;
+			if (!pending) return;
+			let screen: string[] = [];
+			try {
+				screen =
+					(this.tui as { getScreenLines?: () => string[] } | undefined)
+						?.getScreenLines?.() ?? [];
+			} catch {
+				/* no evidence */
+			}
+			const ids = [...pending]
+				.filter(([, m]) => screen.some((line) => line.includes(m)))
+				.map(([id]) => id);
+			const changed =
+				ids.length !== this.claimed.length ||
+				ids.some((id) => !this.claimed.includes(id));
+			this.sendClaim(ids);
+			if (changed) this.tui?.requestRender();
+		});
+	}
+
+	private finishFrame(
+		ids: string[],
+		ticking = ids.length > 0,
+		markers?: Map<string, string>,
+	) {
+		if (markers?.size) {
+			this.previous = [];
+			this.checkScreen(markers);
+		} else {
+			this.onScreen = undefined;
+			// Inline: only renew claims for children drawn on both this and the preceding frame.
+			this.sendClaim(this.previous.filter((id) => ids.includes(id)));
+			this.previous = ids;
+		}
 		if (ticking && !this.tick) {
 			this.tick = setInterval(() => this.tui?.requestRender(), 1000);
 			this.tick.unref();
@@ -290,7 +361,8 @@ export class TodoOverlay {
 		const drawn: string[] = [];
 		let ticking = false;
 		const now = Date.now();
-		const evidence = this.linesReachScreen();
+		const evidence = this.evidence();
+		const markers = new Map<string, string>();
 		for (const [i, task] of layout.visible.entries()) {
 			const { runs, older } = bound.get(task.id) ?? history(undefined);
 			const children = runs.flatMap((r) => live?.get(r.id) ?? []);
@@ -317,13 +389,20 @@ export class TodoOverlay {
 					"dim",
 					`${last ? " " : "│"}    ${indent}${j === children.length - 1 ? "└" : "├"} ${runLine(r, now)}`,
 				);
-				const visibleLine = truncate(childLine);
-				lines.push(visibleLine);
+				const whole = visibleWidth(childLine) <= width;
 				ticking = true;
-				if (evidence && visibleWidth(childLine) <= width) drawn.push(r.id);
+				// Only a row shown in full is claimed; a truncated one carries no marker.
+				if (whole && evidence === "screen") {
+					const m = this.marker(r.id);
+					markers.set(r.id, m);
+					lines.push(childLine + m);
+				} else {
+					lines.push(truncate(childLine));
+					if (whole && evidence === "inline") drawn.push(r.id);
+				}
 			}
 		}
-		this.finishFrame(drawn, ticking);
+		this.finishFrame(drawn, ticking, markers);
 
 		const newlyDisplayedCompletedTaskIds = overlayTasks
 			.filter(

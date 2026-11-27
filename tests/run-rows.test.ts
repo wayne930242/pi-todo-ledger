@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, Spacer, Text } from "@earendil-works/pi-tui";
-import { renderLayoutFrame } from "@earendil-works/pi-tui/dist/layout.js";
+import { type Component, Container, Spacer, Text, TuiAltScreen } from "@earendil-works/pi-tui";
 import { setActiveRenderSession } from "../src/todo.ts";
 import { TodoOverlay } from "../src/todo-overlay.ts";
 import { type Probe, type RunRow, runLine } from "../src/view/live-runs.ts";
@@ -18,7 +17,7 @@ const worker = (extra: Partial<RunRow> = {}): RunRow => ({
 	id: "w1", name: "deep-worker", model: "gpt-6.2-astra", agent: "worker", startedAt: Date.now() - 5000, phase: { kind: "active" }, ...extra,
 });
 
-async function mount(opts: { mode?: string; bound?: boolean; tasks?: number; expanded?: boolean; rows?: () => RunRow[] }) {
+async function mount(opts: { mode?: string; tui?: object; bound?: boolean; tasks?: number; expanded?: boolean; rows?: () => RunRow[] }) {
 	const probes: Probe[] = [];
 	const overlay = new TodoOverlay((p) => {
 		probes.push(p.claim ? { claim: { ...p.claim, ids: [...p.claim.ids] } } : {});
@@ -34,7 +33,7 @@ async function mount(opts: { mode?: string; bound?: boolean; tasks?: number; exp
 	setActiveRenderSession(h.sessionId);
 	let widget!: Component;
 	const redraws: boolean[] = [];
-	const tui = { ...(opts.mode ? { mode: opts.mode } : {}), requestRender: (force?: boolean) => redraws.push(!!force) };
+	const tui = opts.tui ?? { ...(opts.mode ? { mode: opts.mode } : {}), requestRender: (force?: boolean) => redraws.push(!!force) };
 	overlay.setUICtx({
 		theme,
 		setWidget: (_k: string, f?: (tui: object, t: Theme) => Component) => { if (f) widget = f(tui, theme); },
@@ -45,29 +44,76 @@ async function mount(opts: { mode?: string; bound?: boolean; tasks?: number; exp
 	return { overlay, widget, probes, claims, redraws };
 }
 
-function chat(widget: Component) {
-	const lines = (k: number, s: string) => new Text(Array.from({ length: k }, (_, i) => `${s} ${i}`).join("\n"), 0, 0);
+/** Pi's fullscreen TUI on a fake terminal, laid out by Pi's own chat viewport. */
+function fullscreen() {
+	const size = { columns: 80, rows: 40 };
+	const terminal = {
+		start() {}, stop() {}, async drainInput() {}, write() {}, moveBy() {}, hideCursor() {}, showCursor() {},
+		clearLine() {}, clearFromCursor() {}, clearScreen() {}, setTitle() {}, setProgress() {}, setProgramStatus() {},
+		get columns() { return size.columns; }, get rows() { return size.rows; }, get kittyProtocolActive() { return false; },
+	};
+	const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
 	const above = new Container();
-	above.addChild(new Spacer(1));
-	above.addChild(widget);
-	const { root } = createChatViewport({
-		document: lines(60, "transcript"), pendingMessages: new Container(), status: new Container(),
-		widgetsAbove: above, editor: lines(3, "editor"), widgetsBelow: new Container(), footer: lines(2, "footer"),
-	});
-	return (height: number) => renderLayoutFrame(root, 80, height, () => {}).lines;
+	const lines = (k: number, s: string) => new Text(Array.from({ length: k }, (_, i) => `${s} ${i}`).join("\n"), 0, 0);
+	const mountWidget = (widget: Component) => {
+		above.addChild(new Spacer(1));
+		above.addChild(widget);
+		const { root } = createChatViewport({
+			document: lines(60, "transcript"), pendingMessages: new Container(), status: new Container(),
+			widgetsAbove: above, editor: lines(3, "editor"), widgetsBelow: new Container(), footer: lines(2, "footer"),
+		});
+		tui.setLayoutRoot(root);
+		tui.start();
+	};
+	// One painted frame, then the microtask that reads it.
+	const frame = async (rows: number) => {
+		size.rows = rows;
+		tui.renderNow();
+		await new Promise((r) => setImmediate(r));
+		return tui.getScreenLines();
+	};
+	return { tui, mountWidget, frame };
 }
 
-test("fullscreen layout that clips the widget never hides a run from both widgets", async () => {
-	const m = await mount({ mode: "fullscreen", tasks: 18 });
-	const frame = chat(m.widget);
-	const tall = frame(40);
-	assert.ok(tall.some((l) => l.includes("deep-worker")), "tall window shows the run");
+test("fullscreen: a run row clipped by the layout is never claimed", async (ctx) => {
+	const pi = fullscreen();
+	ctx.after(() => pi.tui.stop());
+	const m = await mount({ tui: pi.tui, tasks: 18 });
+	pi.mountWidget(m.widget);
 	for (let i = 0; i < 3; i++) {
-		const short = frame(20);
+		const short = await pi.frame(20);
 		assert.ok(!short.some((l) => l.includes("deep-worker")), "short window clips the run row");
 	}
-	// Pi clips after the widget rendered; without a post-layout check the ledger must not claim.
 	assert.deepEqual(m.claims().filter((ids) => ids.length), []);
+	m.overlay.dispose();
+});
+
+test("fullscreen: a run row on the painted screen is claimed, and released once the layout clips it", async (ctx) => {
+	const pi = fullscreen();
+	ctx.after(() => pi.tui.stop());
+	const m = await mount({ tui: pi.tui, tasks: 18 });
+	pi.mountWidget(m.widget);
+	const tall = await pi.frame(40);
+	assert.ok(tall.some((l) => l.includes("deep-worker")), "tall window shows the run");
+	assert.deepEqual(m.claims().at(-1), ["w1"]);
+	await pi.frame(40);
+	assert.deepEqual(m.claims().at(-1), ["w1"], "each painted frame renews the claim");
+	const short = await pi.frame(20);
+	assert.ok(!short.some((l) => l.includes("deep-worker")));
+	assert.deepEqual(m.claims().at(-1), [], "the frame that clipped the row releases it");
+	await pi.frame(40);
+	assert.deepEqual(m.claims().at(-1), ["w1"]);
+	m.overlay.dispose();
+	assert.deepEqual(m.claims().at(-1), []);
+});
+
+test("fullscreen without getScreenLines gives no evidence, so nothing is claimed", async () => {
+	const m = await mount({ mode: "fullscreen" });
+	m.widget.render(80);
+	await new Promise((r) => setImmediate(r));
+	m.widget.render(80);
+	await new Promise((r) => setImmediate(r));
+	assert.deepEqual(m.claims(), []);
 	m.overlay.dispose();
 });
 

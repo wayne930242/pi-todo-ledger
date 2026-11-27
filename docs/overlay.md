@@ -55,9 +55,12 @@ When pi-herdr-agents is loaded, each task lists its live bound runs (`metadata.h
 A pending cancel replaces the state with `cancelling` or `cancel unconfirmed`.
 Run rows count against the row budget; a task whose runs do not fit shows `· N runs` instead.
 
-After a run row has been drawn on two frames in a row, the panel asks the Subagents widget to hide that run.
-It asks only when it knows the row reached the screen, which is Pi's inline renderer.
-Pi's fullscreen layout can clip the panel after it is drawn, so there the Subagents widget keeps every run, and a run can appear in both.
+The panel asks the Subagents widget to hide a run only once it knows the run's row reached the screen:
+
+- In Pi's inline renderer every widget line is written, so a row drawn on two frames in a row counts.
+- Pi's fullscreen layout can clip the panel after it is drawn. Each run row there ends in a zero-width marker (an OSC 8 hyperlink close with an `id` parameter), and right after Pi paints a frame the panel looks for that marker in `getScreenLines()`. A row the layout cut off has no marker on screen, so its run stays in the Subagents widget. A changed claim triggers one more frame, so the Subagents widget catches up one frame later.
+- A renderer that offers neither gives no evidence, and the Subagents widget keeps every run.
+
 Collapsing the panel, or the run leaving the panel, returns the run to the Subagents widget.
 
 ## Overflow
