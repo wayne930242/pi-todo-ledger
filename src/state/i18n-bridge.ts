@@ -5,9 +5,10 @@
  *
  * - `t(key, fallback)` is `scope("pi-todo-ledger")` if the SDK is
  *   installed (live `/languages` updates propagate). If the SDK is missing
- *   (standalone install without rpiv-i18n), `t` is an identity passthrough
- *   that returns the inline English fallback at every call site, so the
- *   extension stays online with English UI.
+ *   (standalone install without rpiv-i18n), `t` returns the inline English
+ *   fallback at every call site, so the extension stays online with English UI.
+ * - Traditional Chinese (`locales/zh-TW.json`) is served here, not by the SDK,
+ *   whose picker lists only `zh`: see `renderLocale()` for when it applies.
  * - `formatStatusLabel(status)` resolves a TaskStatus to its locale-aware
  *   label via the canonical `status.*` namespace, with the English literal
  *   as fallback so nothing renders blank if the namespace isn't registered.
@@ -20,6 +21,7 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { savedLocale } from "../config.ts";
 import type { TaskStatus } from "../tool/types.ts";
 
 export const I18N_NAMESPACE = "pi-todo-ledger";
@@ -28,7 +30,7 @@ export const I18N_NAMESPACE = "pi-todo-ledger";
 const I18N_SDK: string = "@juicesharp/rpiv-i18n";
 
 type ScopeFn = (key: string, fallback: string) => string;
-type I18nSDK = { getActiveLocale?: () => string | undefined; scope: (namespace: string) => ScopeFn };
+type I18nSDK = { scope: (namespace: string) => ScopeFn };
 
 // Prefer the live SDK if installed: closures it returns track the active
 // locale, so /languages picker propagates to our render call sites. If the
@@ -40,21 +42,54 @@ type I18nSDK = { getActiveLocale?: () => string | undefined; scope: (namespace: 
 // downstream module sees the resolved scope; ESM module loading awaits this
 // before evaluating any importer.
 const traditional: Record<string,string> = JSON.parse(readFileSync(new URL('../locales/zh-TW.json', import.meta.url), 'utf8'));
-let active: I18nSDK['getActiveLocale'];
 let scopeImpl: ScopeFn;
 try {
 	const sdk = (await import(I18N_SDK)) as I18nSDK;
-	active = sdk.getActiveLocale;
 	scopeImpl = sdk.scope(I18N_NAMESPACE);
 } catch {
 	scopeImpl = (_key, fallback) => fallback;
 }
 
-export const t: ScopeFn = (key, fallback) => {
+// The SDK republishes this plain-data snapshot on every locale change, a /languages pick included.
+const SDK_STATE = Symbol.for("rpiv-i18n");
+type SdkState = { readonly locale?: string } | undefined;
+
+/** The `--locale` value Pi was started with (`--locale x` or `--locale=x`). */
+function flagLocale(argv = process.argv): string | undefined {
+	for (const [i, arg] of argv.entries()) {
+		if (arg.startsWith("--locale=")) return arg.slice(9) || undefined;
+		if (arg === "--locale" && argv[i + 1] && !argv[i + 1].startsWith("-")) return argv[i + 1];
+	}
+	return undefined;
+}
+
+let seenState: SdkState | null = null;
+let chosen: string | undefined;
+/** The user's explicit choice (`--locale`, then the saved /languages pick), re-read when the SDK applies a locale. */
+function explicitLocale(state: SdkState): string | undefined {
+	if (state !== seenState) {
+		seenState = state;
+		chosen = flagLocale() ?? savedLocale();
+	}
+	return chosen;
+}
+
+/**
+ * The locale to render in. An explicit choice wins as given: `zh` stays Simplified and `zh-TW`
+ * is Traditional. Without one, the SDK derived its code from the system locale and dropped the
+ * region, so the full system locale decides (`zh_TW.UTF-8` → Traditional).
+ */
+export function renderLocale(): string {
 	const env = process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || '';
-	const locale = active?.();
-	const candidate = !locale || locale === 'zh' && /^zh/i.test(env) ? env : locale;
-	if (/^zh[-_](?:TW|Hant)(?:[-_.@]|$)/i.test(candidate)) return (traditional as Record<string,string>)[key] ?? fallback;
+	const state = (globalThis as { [k: symbol]: SdkState })[SDK_STATE];
+	const locale = state?.locale;
+	if (!locale) return env;
+	if (explicitLocale(state) !== undefined) return locale;
+	return env.split(/[-_.@]/)[0]?.toLowerCase() === locale.toLowerCase() ? env : locale;
+}
+
+export const t: ScopeFn = (key, fallback) => {
+	if (/^zh[-_](?:TW|Hant)(?:[-_.@]|$)/i.test(renderLocale())) return traditional[key] ?? fallback;
 	return scopeImpl(key, fallback);
 };
 

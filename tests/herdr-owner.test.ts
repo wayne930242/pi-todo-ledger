@@ -77,6 +77,19 @@ test("resume follows session path; history keeps six unique runs", async () => {
 	assert.equal(history.older, 1);
 });
 
+test("imported duplicate run ids collapse to the last record on read, so the next write is unique", async () => {
+	const run = (id: string, name = id) => ({ id, name });
+	const runs = [run("a"), run("b"), run("a", "A2"), run("c"), run("d"), run("e"), run("f"), run("g"), run("g", "G2")];
+	const task = { id: 1, uid: "t_dupdupdupd", subject: "Imported", status: "pending", metadata: { herdr: { ...run("g", "G2"), runs } } };
+	const h = load({ branch: [{ type: "custom", customType: "todo/v1", data: { v: 1, tasks: [task], nextId: 2 } }] });
+	await h.fire("session_start");
+	await ack(h, task.uid, { id: "new", name: "New" });
+	const herdr = (last(h).metadata as { herdr: { runs: { id: string; name: string }[]; older?: number } }).herdr;
+	// Unique by id (last wins): b, A2, c, d, e, f, G2 → seven; the cap keeps six, then the new run pushes one more out.
+	assert.deepEqual(herdr.runs.map(r => r.name), ["c", "d", "e", "f", "G2", "New"]);
+	assert.equal(herdr.older, 2);
+});
+
 for (const intervening of ["update", "clear", "session_tree"] as const) {
 	test(`legacy numeric dispatch retains identity across an update only: ${intervening}`, async () => {
 		const original = { id: 1, subject: "Legacy", status: "pending" };

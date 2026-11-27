@@ -8,20 +8,21 @@ export interface BoundRun {
 export function history(value: unknown): { runs: BoundRun[]; older: number } {
 	if (!value || typeof value !== "object") return { runs: [], older: 0 };
 	const h = value as Record<string, unknown>;
-	const runs = (Array.isArray(h.runs) ? h.runs : [h])
-		.filter(
-			(r): r is BoundRun =>
-				r && typeof r.id === "string" && typeof r.name === "string",
-		)
-		.slice(-6);
+	const valid = (Array.isArray(h.runs) ? h.runs : [h]).filter(
+		(r): r is BoundRun =>
+			r && typeof r.id === "string" && typeof r.name === "string",
+	);
+	// Imported or hand-edited metadata may repeat an id: keep its last record, in its last position.
+	const unique = valid.filter(
+		(r, i) => !valid.slice(i + 1).some((later) => later.id === r.id),
+	);
+	const stored =
+		typeof h.older === "number" && Number.isSafeInteger(h.older) && h.older > 0
+			? h.older
+			: 0;
 	return {
-		runs,
-		older:
-			typeof h.older === "number" &&
-			Number.isSafeInteger(h.older) &&
-			h.older > 0
-				? h.older
-				: 0,
+		runs: unique.slice(-6),
+		older: stored + Math.max(0, unique.length - 6),
 	};
 }
 export function bindRun(previous: unknown, newest: BoundRun) {

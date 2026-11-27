@@ -22,7 +22,7 @@ async function surfaces(h: Harness, width = 120, overlay = new TodoOverlay(), ex
 		theme: { ...theme, fg: (color: string, s: string) => { if (color === "muted") muted.push(s); return s; } },
 		notify: (s: string) => { notification = s; },
 		setWidget: (_key: string, factory?: (tui: object, t: Theme) => { render: typeof render }) => {
-			if (factory) render = factory({ requestRender() {} }, theme).render;
+			if (factory) render = factory({ mode: "regular", requestRender() {} }, theme).render;
 		},
 		getToolsExpanded: () => expanded,
 	} as unknown as ExtensionUIContext;
@@ -55,7 +55,7 @@ test("live projection draws only bound runs, then releases the claim on collapse
 	await h.fire("session_start");
 	const view = await surfaces(h,120,overlay);
 	assert.deepEqual(view.rows,["● Todos (1/4) · fan-out", "├─ ✓ #61 sb 插單規則", "├─ ◐ #62 ledger 0.6.0", "│    └ todograph-build · astra · 執行中 4m", "├─ ◐ #63 sb 計畫圖", "│    ├ todograph-ui · opus · 等 thread 42s", "│    └ todograph-review · sol · 審查中 1m", "└─ ⏸ #64 maestro 研究 等 boss", ""]);
-	assert.deepEqual(claims.slice(0,3),[[],rows.map(([name])=>name),[]]);
+	assert.deepEqual(claims,[rows.map(([name])=>name),[]]);
 	const dir = mkdtempSync(join(tmpdir(),'todo-budget-'));
 	const xdg = process.env.XDG_CONFIG_HOME;
 	ctx.after(()=>{if(xdg===undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME=xdg; rmSync(dir,{recursive:true,force:true});});

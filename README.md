@@ -121,7 +121,9 @@ Without one, the extension reads `rpiv-todo/config.json` from the same directori
 | `guidance` | Replaces the built-in instructions the extension gives the model about the todo list (`promptSnippet`, `promptGuidelines`). Needs `/reload`. | built-ins |
 
 More detail: [Configuration](docs/configuration.md), [`todo` tool reference](docs/tool-schema.md), [Panel and `/todos`](docs/overlay.md).
-The panel's text is localized when [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n) is installed, and English otherwise.
+The panel's text follows the locale chosen in [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n) when it is installed.
+Traditional Chinese needs `--locale zh-TW` or a `zh_TW` system locale, because the `/languages` picker offers only Simplified `zh`.
+Without rpiv-i18n the panel is Traditional Chinese under a `zh_TW` or `zh_Hant` system locale and English otherwise; see [Localization](docs/overlay.md#localization).
 
 ## License
 

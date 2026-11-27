@@ -39,6 +39,24 @@ export function configCandidates(): string[] {
 	return [CONFIG_NAME, LEGACY_CONFIG_NAME].flatMap((name) => dirs.map((dir) => join(dir, name, "config.json")));
 }
 
+/**
+ * The locale rpiv-i18n's `/languages` picker saved, read the way rpiv-config reads it:
+ * the `$XDG_CONFIG_HOME` file wins when it exists, else `~/.config/rpiv-i18n/locale.json`.
+ */
+export function savedLocale(): string | undefined {
+	for (const dir of configDirs()) {
+		const path = join(dir, "rpiv-i18n", "locale.json");
+		if (!existsSync(path)) continue;
+		try {
+			const locale = (JSON.parse(readFileSync(path, "utf-8")) as { locale?: unknown } | null)?.locale;
+			return typeof locale === "string" && locale ? locale : undefined;
+		} catch {
+			return undefined;
+		}
+	}
+	return undefined;
+}
+
 /** Parse a JSON config file; `{}` for malformed JSON or a non-object value (with a warning). */
 function readJsonObject(path: string): Record<string, unknown> {
 	try {

@@ -49,6 +49,17 @@ snapshots are saved.
 
 Rows longer than the terminal width are truncated with `…`.
 
+## Worker runs under a task
+
+When pi-herdr-agents is loaded, each task lists its live bound runs (`metadata.herdr.runs`) under its row: name, short model, state, and time in that state.
+A pending cancel replaces the state with `cancelling` or `cancel unconfirmed`.
+Run rows count against the row budget; a task whose runs do not fit shows `· N runs` instead.
+
+After a run row has been drawn on two frames in a row, the panel asks the Subagents widget to hide that run.
+It asks only when it knows the row reached the screen, which is Pi's inline renderer.
+Pi's fullscreen layout can clip the panel after it is drawn, so there the Subagents widget keeps every run, and a run can appear in both.
+Collapsing the panel, or the run leaving the panel, returns the run to the Subagents widget.
+
 ## Overflow
 
 The content-row budget is `maxWidgetLines` (default `12`), and the heading counts
@@ -111,14 +122,24 @@ The overlay heading, the `+N more` summary, the collapse hint, the `/todos`
 section headers, and the status words all localize through
 [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n)
 when that package is installed. Bundled locales: `de`, `en`, `es`, `fr`, `pt`,
-`pt-BR`, `ru`, `uk`, `zh`.
+`pt-BR`, `ru`, `uk`, `zh` (Simplified), and `zh-TW` (Traditional).
+
+The `/languages` picker has no Traditional Chinese entry; its `中文 (zh)` is
+Simplified. An explicit choice always wins, and the system locale is only the
+default. To get Traditional Chinese, use one of:
+
+- `pi --locale zh-TW`;
+- `{ "locale": "zh-TW" }` in rpiv-i18n's `locale.json` (see its README for the path);
+- **System default** in `/languages`, with `LC_ALL`, `LC_MESSAGES`, or `LANG` set to
+  a `zh_TW` or `zh_Hant` locale such as `zh_TW.UTF-8`.
 
 LLM-facing output — the tool response envelope, reducer error messages, and the
 schema descriptions — stays English by design.
 
 The SDK is a soft optional peer, loaded through a dynamic import at module init.
-When it is absent, every call site returns its inline English literal and the
-extension stays online: no warning, no crash. Install it at any time with
+When it is absent, the panel is Traditional Chinese under a `zh_TW` or `zh_Hant`
+system locale and English otherwise, and the extension stays online: no warning,
+no crash. Install it at any time with
 `pi install npm:@juicesharp/rpiv-i18n` and restart the session. To add or
 override a translation, drop a `locales/<code>.json` file mirroring `en.json` —
 see the `@juicesharp/rpiv-i18n` README's "Contributing translations" section.

@@ -169,7 +169,7 @@ A match issues a normal guarded `update`: `owner` becomes the full `details.name
 `pane` is the acknowledged `details.worktree.paneId` and is absent for ordinary launches.
 The top-level fields always describe the latest assignment. An old pane id does not carry forward. For example, after a reviewer joins a worker on the same task, `owner` and `metadata.herdr.id` identify the reviewer.
 
-New writers also store `metadata.herdr.runs`: up to six `{ name, id, pane?, session?, agent? }` records, unique by run id, newest last. `session` is the launch acknowledgement's `sessionFile`. Once the list exceeds six, `metadata.herdr.older` counts the discarded records. An earlier v1 record without `runs` counts as one binding. The snapshot version remains 1.
+New writers also store `metadata.herdr.runs`: up to six `{ name, id, pane?, session?, agent? }` records, unique by run id, newest last. `session` is the launch acknowledgement's `sessionFile`. Once the list exceeds six, `metadata.herdr.older` counts the discarded records. An earlier v1 record without `runs` counts as one binding. A reader that finds a repeated run id (in imported or hand-edited metadata) keeps that id's last record in its last position, then applies the cap of six, so the next write is unique again. The snapshot version remains 1.
 
 A successful `subagent_resume` appends its new run id when its acknowledged `sessionPath` matches a retained session path on exactly one non-deleted task in the calling session. An unknown or ambiguous path binds nothing.
 Other metadata stays intact; a refusal leaves the launch successful but adds the reason to its response.

@@ -47,13 +47,21 @@ export function shortModel(model: string) {
 	);
 }
 const words: Record<string, string> = {
+	"cancel.requested": "cancelling",
+	"cancel.unconfirmed": "cancel unconfirmed",
 	"tool.thread_wait": "waiting for thread",
 	"active.reviewer": "reviewing",
 	"kind.active": "running",
 };
 export function runLine(row: RunRow, now: number) {
 	const { kind, label, since } = row.phase;
+	// A pending cancel outranks the lifecycle: the host hides its own warning for claimed rows.
+	const cancel =
+		row.cancel === "requested" || row.cancel === "unconfirmed"
+			? `cancel.${row.cancel}`
+			: undefined;
 	const keys = [
+		cancel,
 		label && `tool.${label}`,
 		kind === "active" && row.agent && `active.${row.agent}`,
 		`kind.${kind}`,

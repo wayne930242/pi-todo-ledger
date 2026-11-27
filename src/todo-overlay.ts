@@ -58,26 +58,36 @@ export class TodoOverlay {
 	private collapsed = false;
 
 	private previous: string[] = [];
+	private claimed = false;
 	private tick?: ReturnType<typeof setInterval>;
 	private query?: Query;
 	constructor(query?: Query) {
 		this.query = query;
 	}
 
-	private finishFrame(
-		ids: string[],
-		answered: boolean,
-		ticking = ids.length > 0,
-	) {
-		// Only renew claims for children visible on both this and the preceding frame.
-		const claim = this.previous.filter((id) => ids.includes(id));
-		if (answered || this.previous.length) {
-			try {
-				this.query?.({ claim: { by: "pi-todo-ledger", ids: claim } });
-			} catch {
-				/* host lease expires */
-			}
+	private sendClaim(ids: string[]) {
+		// An empty claim is a release; send it only to retract an earlier claim.
+		if (!ids.length && !this.claimed) return;
+		this.claimed = ids.length > 0;
+		try {
+			this.query?.({ claim: { by: "pi-todo-ledger", ids } });
+		} catch {
+			/* host lease expires */
 		}
+	}
+
+	/**
+	 * Whether a drawn line reaches the screen. Pi's regular (inline) renderer
+	 * writes every widget line; the fullscreen layout may clip the widget after
+	 * render() returns, which the widget cannot observe, so it gives no evidence.
+	 */
+	private linesReachScreen(): boolean {
+		return (this.tui as { mode?: string } | undefined)?.mode === "regular";
+	}
+
+	private finishFrame(ids: string[], ticking = ids.length > 0) {
+		// Only renew claims for children visible on both this and the preceding frame.
+		this.sendClaim(this.previous.filter((id) => ids.includes(id)));
 		this.previous = ids;
 		if (ticking && !this.tick) {
 			this.tick = setInterval(() => this.tui?.requestRender(), 1000);
@@ -93,7 +103,7 @@ export class TodoOverlay {
 		// Identity-compare so repeat session_start handlers are idempotent;
 		// on identity change (/reload) invalidate so update() re-registers.
 		if (ctx !== this.uiCtx) {
-			this.finishFrame([], false);
+			this.finishFrame([]);
 			this.uiCtx = ctx;
 			this.widgetRegistered = false;
 			this.tui = undefined;
@@ -106,7 +116,7 @@ export class TodoOverlay {
 		const visible = this.selectOverlayTasks(snapshot);
 
 		if (visible.length === 0) {
-			this.finishFrame([], false);
+			this.finishFrame([]);
 			if (this.widgetRegistered) {
 				this.uiCtx.setWidget(WIDGET_KEY, undefined);
 				this.widgetRegistered = false;
@@ -138,7 +148,7 @@ export class TodoOverlay {
 	}
 
 	resetCompletedDisplayState(): void {
-		this.finishFrame([], false);
+		this.finishFrame([]);
 		this.completedTaskIdsPendingHide.clear();
 		this.hiddenCompletedTaskIds.clear();
 		this.lastNextId = undefined;
@@ -155,6 +165,8 @@ export class TodoOverlay {
 
 	toggleCollapse(): void {
 		this.collapsed = !this.collapsed;
+		// Release before the redraw: the host may draw its widget first in that frame.
+		if (this.collapsed) this.finishFrame([]);
 		// Forced full redraw on the collapsed↔expanded height step, mirroring the
 		// lane-dock's requestRender(shapeChanged); distinct from the non-forced
 		// requestRender() refresh paths in update()/hideCompletedTasksFromPreviousTurn().
@@ -206,10 +218,16 @@ export class TodoOverlay {
 		const snapshot = this.getSnapshot();
 		const overlayTasks = this.selectOverlayTasks(snapshot);
 		if (overlayTasks.length === 0) {
-			this.finishFrame([], false);
+			this.finishFrame([]);
 			return [];
 		}
-		const live = liveRows(this.query);
+		const bound = new Map(
+			overlayTasks.map((t) => [t.id, history(t.metadata?.herdr)] as const),
+		);
+		const hasRuns = [...bound.values()].some((h) => h.runs.length > 0);
+		// Ask the host only when some todo has bound runs and the tree is shown.
+		const live =
+			hasRuns && !this.collapsed ? liveRows(this.query) : undefined;
 
 		const plan = planView(overlayTasks);
 		// Keep completed rows in their old slots; fill open slots in display order before budgeting.
@@ -228,7 +246,7 @@ export class TodoOverlay {
 		const headingIcon = hasActive ? "●" : "○";
 		const headingText = `${t("overlay.heading", OVERLAY_HEADING)} (${counts.completed}/${counts.total})`;
 		const graph = plan.sharedGraph
-			? ` · ${theme.fg("dim", live && plan.sharedGraph === "fan-out/fan-in" ? "fan-out" : plan.sharedGraph)}`
+			? ` · ${theme.fg("dim", hasRuns && plan.sharedGraph === "fan-out/fan-in" ? "fan-out" : plan.sharedGraph)}`
 			: "";
 		const heading = truncate(
 			`${theme.fg(headingColor, headingIcon)} ${theme.fg(headingColor, headingText)}${graph}`,
@@ -244,7 +262,7 @@ export class TodoOverlay {
 		// shortcut was bound and the overlay collapsed) — render a static collapsed
 		// label instead of splicing the sentinel into the placeholder.
 		if (this.collapsed) {
-			this.finishFrame([], !!live);
+			this.finishFrame([]);
 			const key = resolveCollapseKey();
 			const hint =
 				key === COLLAPSE_KEY_OFF
@@ -272,8 +290,9 @@ export class TodoOverlay {
 		const drawn: string[] = [];
 		let ticking = false;
 		const now = Date.now();
+		const evidence = this.linesReachScreen();
 		for (const [i, task] of layout.visible.entries()) {
-			const { runs, older } = history(task.metadata?.herdr);
+			const { runs, older } = bound.get(task.id) ?? history(undefined);
 			const children = runs.flatMap((r) => live?.get(r.id) ?? []);
 			const fits = children.length <= spare;
 			const last = !overflow && i === layout.visible.length - 1;
@@ -301,10 +320,10 @@ export class TodoOverlay {
 				const visibleLine = truncate(childLine);
 				lines.push(visibleLine);
 				ticking = true;
-				if (visibleWidth(childLine) <= width) drawn.push(r.id);
+				if (evidence && visibleWidth(childLine) <= width) drawn.push(r.id);
 			}
 		}
-		this.finishFrame(drawn, !!live, ticking);
+		this.finishFrame(drawn, ticking);
 
 		const newlyDisplayedCompletedTaskIds = overlayTasks
 			.filter(
@@ -357,7 +376,7 @@ export class TodoOverlay {
 	}
 
 	dispose(): void {
-		this.finishFrame([], false);
+		this.finishFrame([]);
 		if (this.uiCtx) this.uiCtx.setWidget(WIDGET_KEY, undefined);
 		this.widgetRegistered = false;
 		this.tui = undefined;
