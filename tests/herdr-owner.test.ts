@@ -64,6 +64,36 @@ test("a legacy uid-less task binds by local id; reassignment without a pane drop
 	assert.equal(last(h).uid, undefined);
 });
 
+for (const intervening of ["update", "clear", "session_tree"] as const) {
+	test(`legacy numeric dispatch retains identity across an update only: ${intervening}`, async () => {
+		const original = { id: 1, subject: "Legacy", status: "pending" };
+		const entry = { type: "custom", customType: "todo/v1", data: { v: 1, tasks: [original], nextId: 2 } };
+		const h = load({ sessionId: `0abc0001-${intervening}`, branch: [entry] });
+		await h.fire("session_start");
+		const item = "0abc0001#1";
+		await start(h, item);
+		if (intervening === "update") {
+			await h.call({ action: "update", id: 1, subject: "Renamed", metadata: { note: 1 } });
+		} else if (intervening === "clear") {
+			await h.call({ action: "clear" });
+			await h.call({ action: "create", subject: "Replacement" });
+		} else {
+			await h.fire("session_tree");
+		}
+		const before = snapshots(h.branch).length;
+		await ack(h, item);
+		if (intervening === "update") {
+			assert.equal(last(h).owner, name);
+			assert.equal(last(h).subject, "Renamed");
+			assert.equal(last(h).uid, undefined);
+			assert.deepEqual(last(h).metadata, { note: 1, herdr: { name, id } });
+		} else {
+			assert.equal(last(h).owner, undefined);
+			assert.equal(snapshots(h.branch).length, before);
+		}
+	});
+}
+
 test("clear and reuse of a numeric id during launch cannot bind its replacement", async () => {
 	const h = load({ sessionId: "fee10000-parent" });
 	await h.call({ action: "create", subject: "Original" });

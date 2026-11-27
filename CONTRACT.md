@@ -156,7 +156,7 @@ Namespaces nobody registered pass unchecked.
 
 When `pi-herdr-agents` acknowledges a `subagent` launch with `details.status: "started"` and echoes the call's `item`, the ledger looks up that task in the **calling session**.
 `item` can be a stable task uid or `<session8>#<id>`, where `session8` is the first eight hex digits of the calling session id.
-A numeric reference identifies the task present at dispatch; clearing the list and reusing its number cannot redirect the binding.
+A numeric reference identifies the task present at dispatch: ordinary updates keep that identity even on a legacy task without a uid, while clearing or replaying the list invalidates a pending legacy binding.
 Missing, unknown, foreign-session, or tombstoned items and failed or uncertain launches leave the list unchanged.
 
 A match issues a normal guarded `update`: `owner` becomes the full `details.name`, and `metadata.herdr` records the launch:
@@ -171,9 +171,10 @@ On another successful assignment the new record replaces the old one, so an old 
 Other metadata stays intact; a refusal leaves the launch successful but adds the reason to its response.
 Manual `owner` updates (including `self`) are still allowed; the optional `herdr` record describes the last bound launch, not proof of a live pane or of the current owner's identity.
 
-Use the full name for `/boss send`, quoting names with spaces, or the run id as a stable fallback.
+Use `metadata.herdr.id` as the stable key when resolving or messaging the worker.
+Use a name with `/boss send` only when it matches the name Straw Boss shows; on an unlabeled pane it may derive `api-worker` from the launch script for `API worker`.
 For names longer than 24 UTF-16 units, Straw Boss displays just the first 23 units plus `…` in the `sb_name` pane token.
-Consumers resolve the live pane from the id or full name at read time, not from that cosmetic label or a saved pane id.
+Resolve the live pane at read time rather than targeting that cosmetic label or a saved pane id.
 This namespace needs no new status, schema field, or contract version.
 
 ## 4. Change guards

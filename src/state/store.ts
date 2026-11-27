@@ -8,7 +8,12 @@ import { EMPTY_STATE, type TaskState } from "./state.ts";
  * The Map is the single mutation seam — only `commitState` / `replaceState` /
  * `evictSession` write it; the reducer (`state/state-reducer.ts`) stays pure.
  */
-const sessions = new Map<string, TaskState>();
+interface SessionSlot {
+	state: TaskState;
+	/** In-process identity of the list, not the session. Never serialized. */
+	generation: symbol;
+}
+const sessions = new Map<string, SessionSlot>();
 
 /**
  * Ctx-less render pointer: which slot do the ctx-free readers (the overlay's
@@ -37,7 +42,7 @@ function freshState(): TaskState {
 /** Get-or-read a session's slot: the committed slot by identity, or a fresh
  * EMPTY_STATE copy (not stored) when the slot is absent. */
 function slotFor(sessionId: string): TaskState {
-	return sessions.get(sessionId) ?? freshState();
+	return sessions.get(sessionId)?.state ?? freshState();
 }
 
 /**
@@ -64,7 +69,12 @@ export function getState(sessionId: string): TaskState {
  * `replayFromBranch` decodes the latest snapshot, keyed to the session.
  */
 export function replaceState(sessionId: string, next: TaskState): void {
-	sessions.set(sessionId, next);
+	sessions.set(sessionId, { state: next, generation: Symbol() });
+}
+
+/** Together with the local id, identifies a legacy task until clear, replay, or eviction. */
+export function listGeneration(sessionId: string): symbol | undefined {
+	return sessions.get(sessionId)?.generation;
 }
 
 /**
@@ -73,7 +83,9 @@ export function replaceState(sessionId: string, next: TaskState): void {
  * `/todos`, `renderCall`), keyed to the calling session.
  */
 export function commitState(sessionId: string, next: TaskState): void {
-	sessions.set(sessionId, next);
+	const slot = sessions.get(sessionId);
+	if (slot) slot.state = next;
+	else replaceState(sessionId, next);
 }
 
 /** Drop a session's slot on `session_shutdown`. No-op if the slot is absent. */

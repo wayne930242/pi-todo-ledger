@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { changesState, type ApplyResult } from "../state/state-reducer.ts";
 import type { TaskState } from "../state/state.ts";
-import { commitState } from "../state/store.ts";
+import { commitState, replaceState } from "../state/store.ts";
 import { buildToolResult } from "../tool/response-envelope.ts";
 import type { TaskAction, TaskMutationParams } from "../tool/types.ts";
 import { CHANGED_EVENT, type GuardOp, SNAPSHOT_ENTRY_TYPE, toChangedEvent, toSnapshot } from "./contract.ts";
@@ -36,7 +36,8 @@ export function makeFinishCall(pi: ExtensionAPI, namespaces: NamespaceRegistry, 
 		if (signal?.aborted) return refuse(action, input, before, ABORTED);
 		// Append before committing the live slot; even nested tool calls survive replay, and a failed append changes nothing.
 		pi.appendEntry(SNAPSHOT_ENTRY_TYPE, toSnapshot(result.state, sessionId));
-		commitState(sessionId, result.state);
+		if (action === "clear") replaceState(sessionId, result.state);
+		else commitState(sessionId, result.state);
 		pi.events.emit(CHANGED_EVENT, toChangedEvent(sessionId, result.state));
 		return buildToolResult(action, input, result.state, result.op);
 	};
