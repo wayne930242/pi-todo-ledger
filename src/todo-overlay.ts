@@ -24,6 +24,7 @@ import {
 import {
 	COLLAPSE_KEY_OFF,
 	getMaxWidgetLines,
+	getView,
 	resolveCollapseKey,
 } from "./config.ts";
 import { formatStatusLabel, t } from "./state/i18n-bridge.ts";
@@ -35,10 +36,11 @@ import {
 } from "./state/selectors.ts";
 import { getRenderState } from "./state/store.ts";
 import { formatPlanTaskLine } from "./view/format.ts";
-import { planView } from "./view/plan.ts";
+import { type PlanRow, planView } from "./view/plan.ts";
+import type { Task } from "./tool/types.ts";
 
 import { history } from "./ledger/herdr-runs.ts";
-import { liveRows, runLine, type Query } from "./view/live-runs.ts";
+import { liveRows, runLine, type Query, type RunRow } from "./view/live-runs.ts";
 
 const WIDGET_KEY = "rpiv-todos";
 
@@ -47,6 +49,19 @@ const OVERLAY_HEADING = "Todos";
 const OVERLAY_MORE = "more";
 const OVERLAY_EXPAND_HINT = "{key} to expand";
 const OVERLAY_COLLAPSED = "collapsed";
+const OVERLAY_SEPARATOR = ", ";
+
+/** What one frame's row drawing needs, shared by the full and focus views. */
+interface DrawContext {
+	theme: Theme;
+	width: number;
+	truncate: (line: string) => string;
+	bound: Map<number, ReturnType<typeof history>>;
+	live: ReturnType<typeof liveRows>;
+	showIds: boolean;
+	now: number;
+	evidence: "inline" | "screen" | undefined;
+}
 
 export class TodoOverlay {
 	private uiCtx: ExtensionUIContext | undefined;
@@ -347,30 +362,182 @@ export class TodoOverlay {
 			]);
 		}
 
-		const lines: string[] = [heading];
-		// Budget for content rows (heading + tasks/summary). The rendered widget is
-		// one line taller — withTrailingSpacer() appends a blank row below the panel.
-		// Pi's global tool-output expansion mode is read on every render so its
-		// expand/collapse shortcut also expands this live widget. Optional chaining
-		// preserves compatibility with hosts predating getToolsExpanded().
+		// Budget for content rows below the heading (tasks, run rows, summary). The
+		// rendered widget is one line taller — withTrailingSpacer() appends a blank row
+		// below the panel. Pi's global tool-output expansion mode is read on every
+		// render so its expand/collapse shortcut also lifts this budget. Optional
+		// chaining preserves compatibility with hosts predating getToolsExpanded().
 		const bodyBudget =
 			this.uiCtx?.getToolsExpanded?.() === true
 				? Infinity
 				: getMaxWidgetLines() - 1;
+		const draw: DrawContext = {
+			theme,
+			width,
+			truncate,
+			bound,
+			live,
+			showIds,
+			now: Date.now(),
+			evidence: this.evidence(),
+		};
+		const body =
+			getView() === "full"
+				? this.fullBody(overlayState, plan, bodyBudget, draw)
+				: this.focusBody(overlayTasks, plan, bodyBudget, draw);
+
+		const newlyDisplayedCompletedTaskIds = overlayTasks
+			.filter(
+				(task) =>
+					task.status === "completed" &&
+					!this.completedTaskIdsPendingHide.has(task.id) &&
+					!this.hiddenCompletedTaskIds.has(task.id),
+			)
+			.map((task) => task.id);
+		for (const taskId of newlyDisplayedCompletedTaskIds) {
+			this.completedTaskIdsPendingHide.add(taskId);
+		}
+		return this.withTrailingSpacer([heading, ...body]);
+	}
+
+	/** The whole dependency tree, budgeted by selectOverlayLayout (the `"full"` view). */
+	private fullBody(
+		overlayState: { tasks: Task[]; nextId: number },
+		plan: ReturnType<typeof planView>,
+		bodyBudget: number,
+		draw: DrawContext,
+	): string[] {
+		const { theme, truncate } = draw;
 		const layout = selectOverlayLayout(overlayState, bodyBudget);
 		const overflow = layout.hiddenCompleted + layout.truncatedTail;
-		let spare = bodyBudget - layout.visible.length - Number(overflow > 0);
+		const spare = bodyBudget - layout.visible.length - Number(overflow > 0);
+		const lines = this.drawTasks(
+			layout.visible.map((task) => ({ task, row: plan.rows.get(task.id) })),
+			spare,
+			overflow === 0,
+			draw,
+		);
+		if (overflow === 0) return lines;
+
+		const overflowParts: string[] = [];
+		if (layout.hiddenCompleted > 0)
+			overflowParts.push(
+				`${layout.hiddenCompleted} ${formatStatusLabel("completed")}`,
+			);
+		if (layout.truncatedTail > 0)
+			overflowParts.push(
+				`${layout.truncatedTail} ${formatStatusLabel("pending")}`,
+			);
+		const more = t("overlay.more", OVERLAY_MORE);
+		const summary =
+			overflowParts.length > 0
+				? `+${overflow} ${more} (${overflowParts.join(", ")})`
+				: `+${overflow} ${more}`;
+		lines.push(
+			truncate(`${theme.fg("dim", "└─")} ${theme.fg("dim", summary)}`),
+		);
+		return lines;
+	}
+
+	/**
+	 * The focus view (default): in-progress tasks with their runs, the next open
+	 * tasks (two, or three when nothing is in progress), then this turn's completed
+	 * rows if room is left, and one summary row counting whatever is hidden. Rows are
+	 * flat, so every unfinished blocker goes to the `⛓` tail.
+	 */
+	private focusBody(
+		overlayTasks: Task[],
+		plan: ReturnType<typeof planView>,
+		bodyBudget: number,
+		draw: DrawContext,
+	): string[] {
+		const { theme, truncate } = draw;
+		const inProgress = plan.ordered.filter((t) => t.status === "in_progress");
+		const pending = plan.ordered.filter((t) => t.status === "pending");
+		const completed = overlayTasks.filter((t) => t.status === "completed");
+		const next = pending.slice(0, inProgress.length ? 2 : 3);
+		const total = inProgress.length + pending.length + completed.length;
+
+		// Task rows first, in priority order; runs take the spare rows in display order;
+		// completed rows get what is left. The summary row is reserved only when needed.
+		const fit = (slots: number) => {
+			const core = [...inProgress, ...next].slice(0, slots);
+			let spare = slots - core.length;
+			for (const task of core) {
+				const n = this.children(task, draw).length;
+				if (n <= spare) spare -= n;
+			}
+			const done = completed.slice(0, spare);
+			return { core, done, spare: slots - core.length - done.length };
+		};
+		let shown = fit(bodyBudget);
+		let summarized = shown.core.length + shown.done.length < total;
+		if (summarized) shown = fit(bodyBudget - 1);
+
+		const openIds = new Set(plan.ordered.map((t) => t.id));
+		const flat = (task: Task): PlanRow | undefined => {
+			const row = plan.rows.get(task.id);
+			return row
+				? {
+						depth: 0,
+						graph: row.graph,
+						otherBlockers: (task.blockedBy ?? []).filter((id) => openIds.has(id)),
+					}
+				: undefined;
+		};
+		const lines = this.drawTasks(
+			[...shown.core, ...shown.done].map((task) => ({ task, row: flat(task) })),
+			shown.spare,
+			!summarized,
+			draw,
+		);
+		if (!summarized) return lines;
+
+		const isShown = new Set([...shown.core, ...shown.done]);
+		const hidden = (list: Task[]) => list.filter((t) => !isShown.has(t)).length;
+		const parts = (
+			[
+				[hidden(inProgress), "in_progress"],
+				[hidden(pending), "pending"],
+				[hidden(completed), "completed"],
+			] as const
+		)
+			.filter(([n]) => n > 0)
+			.map(([n, status]) => `${n} ${formatStatusLabel(status)}`);
+		const summary = `+${parts.join(t("overlay.separator", OVERLAY_SEPARATOR))}`;
+		lines.push(
+			truncate(`${theme.fg("dim", "└─")} ${theme.fg("dim", summary)}`),
+		);
+		return lines;
+	}
+
+	/** Live run rows bound to a task (empty when the host gave no rows). */
+	private children(task: Task, draw: DrawContext): RunRow[] {
+		const { runs } = draw.bound.get(task.id) ?? history(undefined);
+		return runs.flatMap((r) => draw.live?.get(r.id) ?? []);
+	}
+
+	/**
+	 * Draw task rows and, where `spare` rows remain, their run rows; a task whose
+	 * runs do not fit shows `· N runs`. Ends the frame's claim bookkeeping. `closed`
+	 * means no summary row follows, so the last task row takes `└─`.
+	 */
+	private drawTasks(
+		entries: { task: Task; row?: PlanRow }[],
+		spare: number,
+		closed: boolean,
+		draw: DrawContext,
+	): string[] {
+		const { theme, width, truncate, live, showIds, now, evidence } = draw;
+		const lines: string[] = [];
 		const drawn: string[] = [];
 		let ticking = false;
-		const now = Date.now();
-		const evidence = this.evidence();
 		const marked = new Map<string, string>();
-		for (const [i, task] of layout.visible.entries()) {
-			const { runs, older } = bound.get(task.id) ?? history(undefined);
-			const children = runs.flatMap((r) => live?.get(r.id) ?? []);
+		for (const [i, { task, row }] of entries.entries()) {
+			const { older } = draw.bound.get(task.id) ?? history(undefined);
+			const children = this.children(task, draw);
 			const fits = children.length <= spare;
-			const last = !overflow && i === layout.visible.length - 1;
-			const row = plan.rows.get(task.id);
+			const last = closed && i === entries.length - 1;
 			const display =
 				fits && children.some((r) => r.name === task.owner)
 					? { ...task, owner: undefined }
@@ -405,42 +572,7 @@ export class TodoOverlay {
 			}
 		}
 		this.finishFrame(drawn, ticking, marked);
-
-		const newlyDisplayedCompletedTaskIds = overlayTasks
-			.filter(
-				(task) =>
-					task.status === "completed" &&
-					!this.completedTaskIdsPendingHide.has(task.id) &&
-					!this.hiddenCompletedTaskIds.has(task.id),
-			)
-			.map((task) => task.id);
-		for (const taskId of newlyDisplayedCompletedTaskIds) {
-			this.completedTaskIdsPendingHide.add(taskId);
-		}
-
-		if (layout.hiddenCompleted === 0 && layout.truncatedTail === 0) {
-			return this.withTrailingSpacer(lines);
-		}
-
-		const totalHidden = layout.hiddenCompleted + layout.truncatedTail;
-		const overflowParts: string[] = [];
-		if (layout.hiddenCompleted > 0)
-			overflowParts.push(
-				`${layout.hiddenCompleted} ${formatStatusLabel("completed")}`,
-			);
-		if (layout.truncatedTail > 0)
-			overflowParts.push(
-				`${layout.truncatedTail} ${formatStatusLabel("pending")}`,
-			);
-		const more = t("overlay.more", OVERLAY_MORE);
-		const summary =
-			overflowParts.length > 0
-				? `+${totalHidden} ${more} (${overflowParts.join(", ")})`
-				: `+${totalHidden} ${more}`;
-		lines.push(
-			truncate(`${theme.fg("dim", "└─")} ${theme.fg("dim", summary)}`),
-		);
-		return this.withTrailingSpacer(lines);
+		return lines;
 	}
 
 	/**

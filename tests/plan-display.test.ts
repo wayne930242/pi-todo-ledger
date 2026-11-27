@@ -42,7 +42,20 @@ async function surfaces(h: Harness, width = 120, overlay = new TodoOverlay(), ex
 	return { rows, collapsed, notification, commandMuted, overlayMuted: muted };
 }
 
+/** These tests pin the whole tree, so they run the panel with `"view": "full"`. */
+function fullView(ctx: { after: (fn: () => void) => void }, config: object = {}) {
+	const dir = mkdtempSync(join(tmpdir(), 'todo-full-'));
+	const xdg = process.env.XDG_CONFIG_HOME;
+	ctx.after(() => { if (xdg === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = xdg; rmSync(dir, { recursive: true, force: true }); });
+	mkdirSync(join(dir, 'pi-todo-ledger'));
+	const write = (extra: object) => writeFileSync(join(dir, 'pi-todo-ledger', 'config.json'), JSON.stringify({ view: "full", ...config, ...extra }));
+	write({});
+	process.env.XDG_CONFIG_HOME = dir;
+	return write;
+}
+
 test("live projection draws only bound runs, then releases the claim on collapse", async (ctx) => {
+	const config = fullView(ctx);
 	ctx.mock.timers.enable({apis:['Date'],now:1_000_000});
 	const old = process.env.LC_ALL;
 	process.env.LC_ALL = 'zh_Hant_TW.UTF-8';
@@ -56,11 +69,7 @@ test("live projection draws only bound runs, then releases the claim on collapse
 	const view = await surfaces(h,120,overlay);
 	assert.deepEqual(view.rows,["● Todos (1/4) · fan-out", "├─ ✓ #61 sb 插單規則", "├─ ◐ #62 ledger 0.6.0", "│    └ todograph-build · astra · 執行中 4m", "├─ ◐ #63 sb 計畫圖", "│    ├ todograph-ui · opus · 等 thread 42s", "│    └ todograph-review · sol · 審查中 1m", "└─ ⏸ #64 maestro 研究 等 boss", ""]);
 	assert.deepEqual(claims,[rows.map(([name])=>name),[]]);
-	const dir = mkdtempSync(join(tmpdir(),'todo-budget-'));
-	const xdg = process.env.XDG_CONFIG_HOME;
-	ctx.after(()=>{if(xdg===undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME=xdg; rmSync(dir,{recursive:true,force:true});});
-	mkdirSync(join(dir,'pi-todo-ledger')); writeFileSync(join(dir,'pi-todo-ledger','config.json'),JSON.stringify({maxWidgetLines:5}));
-	process.env.XDG_CONFIG_HOME=dir;
+	config({maxWidgetLines:5});
 	claims.length=0;
 	const limited = await surfaces(h,120,overlay,false);
 	assert.ok(limited.rows.includes('├─ ◐ #63 sb 計畫圖 · 2 個工作階段'));
@@ -110,7 +119,8 @@ for (const [label, status, metadata, expected] of [
 	});
 }
 
-test("overlay and /todos nest a chain and a fan-out, show muted owners and share one graph heading", async () => {
+test("overlay and /todos nest a chain and a fan-out, show muted owners and share one graph heading", async (ctx) => {
+	fullView(ctx);
 	const h = load();
 	const graph = "fan-out/fan-in";
 	for (const spec of [{ subject: "Scope", owner: "Ari" }, { subject: "Approve", metadata: { waitsOn: "Pat" } },

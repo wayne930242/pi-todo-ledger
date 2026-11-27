@@ -31,6 +31,7 @@ The extension never writes this file — you create and edit it yourself.
 {
   "maxWidgetLines": 8,
   "collapseKey": "alt+t",
+  "view": "full",
   "guidance": {
     "promptSnippet": "Use the `todo` tool to track multi-step work before starting it.",
     "promptGuidelines": [
@@ -41,10 +42,23 @@ The extension never writes this file — you create and edit it yourself.
 }
 ```
 
+## `view`
+
+**Default `"focus"`.** How the overlay lays out the list.
+
+- `"focus"` shows the tasks in progress with their worker runs, the next two
+  open tasks (three when nothing is in progress), and one summary row for the
+  rest, such as `+1 in progress, 5 pending, 2 completed`.
+- `"full"` shows the whole dependency tree, as releases up to 0.6.0 did.
+- Any other value, or none, means `"focus"`.
+- Read fresh on every render, like `maxWidgetLines`, so no `/reload`.
+
+[overlay.md](./overlay.md#focus-view) describes both layouts.
+
 ## `maxWidgetLines`
 
 **Default `12`.** The content-row budget for the overlay — the heading row and,
-on overflow, the `+N more` summary row both count against it. Only the trailing
+on overflow, the summary row both count against it. Only the trailing
 blank spacer sits outside the budget, so `12` renders up to 13 terminal rows.
 
 - Floor of `3`. A number below `3` falls back to the default.
@@ -52,8 +66,9 @@ blank spacer sits outside the budget, so `12` renders up to 13 terminal rows.
 - No ceiling.
 - Read fresh on every render, so a change takes effect on the next repaint —
   no `/reload`.
-- Pi's tool-output expansion mode (`ctrl+o` by default) temporarily overrides
-  this budget and shows every task; collapsing restores the configured budget.
+- Pi's tool-output expansion mode (`ctrl+o` by default) temporarily lifts
+  this budget; collapsing restores it. In the full view that shows every task.
+  The focus view keeps its selection and only stops cutting rows for space.
 
 ## `collapseKey`
 

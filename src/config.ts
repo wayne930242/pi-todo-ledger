@@ -102,6 +102,19 @@ interface TodoConfig {
 	 * entirely. Validation happens in `resolveCollapseKey`, not at load.
 	 */
 	collapseKey?: string;
+	/** Panel layout: `"focus"` (default) or `"full"`. Validated in `getView`. */
+	view?: unknown;
+}
+
+/** Panel layout: the compact focus view, or the whole dependency tree. */
+export type OverlayView = "focus" | "full";
+
+/** Default panel layout when `view` is missing or not one of the two names. */
+export const DEFAULT_VIEW: OverlayView = "focus";
+
+/** Panel layout, read fresh on every render like getMaxWidgetLines(); anything but `"full"` is focus. */
+export function getView(): OverlayView {
+	return loadConfig().view === "full" ? "full" : DEFAULT_VIEW;
 }
 
 /** Default content-row budget when the config is missing/invalid — the prior

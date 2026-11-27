@@ -8,6 +8,7 @@
   "overlay.more": "more",
   "overlay.expandHint": "{key} to expand",
   "overlay.collapsed": "collapsed",
+  "overlay.separator": ", ",
 
   "command.no_todos": "No todos yet. Ask the agent to add some!",
   "command.requires_interactive": "/todos requires interactive mode",

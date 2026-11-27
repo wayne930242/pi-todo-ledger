@@ -21,7 +21,34 @@ and taking the last saved snapshot, which replaces the whole list
 (last-write-wins). See [tool-schema.md](./tool-schema.md#persistence) for where
 snapshots are saved.
 
+## Focus view
+
+The panel opens in the focus view. It shows what is being worked on and what comes next, and folds the rest into one row:
+
+```text
+● Todos (0/8)
+├─ ◐ #8 執行等待
+│    └ fixture-test · astra · 執行中 6s
+├─ ○ #1 檢查畫面
+├─ ○ #2 確認版面
+└─ +5 待處理
+```
+
+Rows come in this order, until the row budget runs out:
+
+1. the heading;
+2. every task in progress, each followed by its run rows;
+3. the next two open tasks in display order, or the next three when nothing is in progress;
+4. completed tasks from the current turn, only if rows are left after the run rows;
+5. one summary row counting the hidden tasks in progress, pending, and completed, in that order, such as `+1 in progress, 5 pending, 2 completed` (`+1 進行中、5 待處理、2 已完成` in zh-TW). Zero counts are left out, and with nothing hidden there is no summary row.
+
+`maxWidgetLines` is a hard cap here too: tasks in progress that do not fit are counted in the summary, and run rows that do not fit fold into `· N runs`.
+Rows are flat, so the `⛓` tail lists every unfinished blocker of a task; `⏸`, owners, and the other marks are the same as in the full view.
+Pi's tool-output expansion mode lifts the row cap but keeps this selection. Set `"view": "full"` (see [configuration.md](./configuration.md#view)) for the tree below, or use `/todos` to see everything once.
+
 ## Anatomy of a row
+
+The full view (`"view": "full"`) draws the whole dependency tree:
 
 ```text
 ● Todos (0/5) · fan-out/fan-in
@@ -66,7 +93,8 @@ Collapsing the panel, or the run leaving the panel, returns the run to the Subag
 ## Overflow
 
 The content-row budget is `maxWidgetLines` (default `12`), and the heading counts
-against it. When there are more tasks than fit:
+against it. The focus view applies it as described [above](#focus-view). In the
+full view, when there are more tasks than fit:
 
 1. one row is reserved for the summary line;
 2. completed tasks are dropped first, newest first — the oldest completed rows
@@ -75,8 +103,8 @@ against it. When there are more tasks than fit:
    truncated;
 4. the last row becomes `+N more (X completed, Y pending)`.
 
-Use Pi's tool-output expansion shortcut (`ctrl+o` by default) to expand the
-widget and show every task. Collapsing Pi's tool output reapplies the configured
+In the full view, Pi's tool-output expansion shortcut (`ctrl+o` by default)
+expands the widget to show every task. Collapsing Pi's tool output reapplies the configured
 row budget. Unfinished work is therefore the last thing to disappear in the
 compact view. See [configuration.md](./configuration.md#maxwidgetlines) for the
 budget's floor and reload semantics.
@@ -121,7 +149,7 @@ tasks. Tombstoned tasks are never listed.
 
 ## Localization
 
-The overlay heading, the `+N more` summary, the collapse hint, the `/todos`
+The overlay heading, both summary rows, the collapse hint, the `/todos`
 section headers, and the status words all localize through
 [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n)
 when that package is installed. Bundled locales: `de`, `en`, `es`, `fr`, `pt`,

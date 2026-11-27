@@ -49,7 +49,7 @@ Use `metadata.herdr.id` to resolve or message the worker by its run key.
 Use a name with `/boss send` only if it matches the name Straw Boss shows; a launch named `API worker` may appear there as `api-worker`.
 You can still set `owner` by hand.
 
-The panel and `/todos` indent each open task under its first unfinished blocker and show its owner as `@owner`.
+`/todos` and the panel's full view indent each open task under its first unfinished blocker; the panel's default focus view lists tasks flat and names every unfinished blocker after the subject. Both show the owner as `@owner`.
 To mark a task as waiting for someone, set `metadata.waitsOn` to their name; to defer it until a particular time, set `metadata.until` to an ISO timestamp, e.g. `2027-01-15T09:00:00+08:00`.
 An open task shows `⏸` with the name or the future deadline in local time.
 These keys are display conventions: they neither schedule a wake-up nor change the task's `status` or the `todo/v1` contract.
@@ -110,13 +110,15 @@ Without one, the extension reads `rpiv-todo/config.json` from the same directori
 ```json
 {
   "maxWidgetLines": 8,
-  "collapseKey": "alt+t"
+  "collapseKey": "alt+t",
+  "view": "full"
 }
 ```
 
 | Setting | What it does | Default |
 | --- | --- | --- |
-| `maxWidgetLines` | Content rows the panel may use, heading included. Minimum `3`. Pi's tool-output expansion mode shows all tasks. | `12` |
+| `view` | `"focus"` lists the tasks in progress and the next open ones, and folds the rest into one summary row. `"full"` shows the whole dependency tree. | `"focus"` |
+| `maxWidgetLines` | Content rows the panel may use, heading included. Minimum `3`. Pi's tool-output expansion mode lifts the limit. | `12` |
 | `collapseKey` | Key that collapses and expands the panel, in pi keybinding form (`alt+o`, `ctrl+shift+t`). `"off"` registers no shortcut. Needs `/reload` to rebind. | `"ctrl+shift+t"` |
 | `guidance` | Replaces the built-in instructions the extension gives the model about the todo list (`promptSnippet`, `promptGuidelines`). Needs `/reload`. | built-ins |
 
