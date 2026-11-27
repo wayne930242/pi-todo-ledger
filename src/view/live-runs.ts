@@ -9,6 +9,8 @@ export interface RunRow {
 	phase: { kind: string; label?: string; since?: number };
 	cancel?: string;
 }
+/** The host's run-rows event (pi-herdr-agents, and pi-straw-boss after the move): the probe and the claim. */
+export const RUN_ROWS_EVENT = "pi-herdr-agents:run-rows:v1";
 export interface Probe {
 	claim?: { by: string; ids: string[] };
 	rows?: { version: 1; rows: RunRow[] };

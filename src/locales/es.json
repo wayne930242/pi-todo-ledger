@@ -13,6 +13,9 @@
   "overlay.next.full": "completo",
   "overlay.next.collapsed": "contraer",
   "overlay.collapsed": "contraído",
+  "overlay.others": "Otros workers",
+  "overlay.worker.one": "worker",
+  "overlay.worker.other": "workers",
 
   "command.no_todos": "Sin tareas aún. ¡Pídele al agente que añada algunas!",
   "command.requires_interactive": "/todos requiere modo interactivo",

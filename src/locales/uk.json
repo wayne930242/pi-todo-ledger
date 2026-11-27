@@ -13,6 +13,11 @@
   "overlay.next.full": "повністю",
   "overlay.next.collapsed": "згорнути",
   "overlay.collapsed": "згорнуто",
+  "overlay.others": "Інші воркери",
+  "overlay.worker.one": "воркер",
+  "overlay.worker.few": "воркери",
+  "overlay.worker.many": "воркерів",
+  "overlay.worker.other": "воркера",
 
   "command.no_todos": "Завдань поки немає. Попросіть агента додати!",
   "command.requires_interactive": "/todos потребує інтерактивного режиму",

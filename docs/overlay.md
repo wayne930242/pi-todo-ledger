@@ -10,7 +10,7 @@ The widget is mounted above the Pi editor under the key `rpiv-todos`, the key rp
 | Stage | Condition |
 | --- | --- |
 | Created | At the first session start that has a UI. A headless session never creates it. |
-| Registered | Only while at least one overlay-visible task exists. The widget unregisters itself when the list empties, and re-registers when a task reappears. |
+| Registered | While at least one overlay-visible task exists, or the run host lists a run of this session (see [Other workers](#other-workers)). The widget unregisters itself when both are gone, and re-registers when a task or a run appears. With no task, a refresh after a `subagent` or `subagent_resume` call, or at the end of a turn, finds the new run. |
 | Bound | Only the foreground session's overlay is refreshed. A detached or child session has its own task state and never rebinds or repaints the foreground panel. |
 | Disposed | On the foreground session's shutdown. A child session shutting down leaves the overlay alone. |
 
@@ -39,8 +39,9 @@ Rows come in this order, until the row budget runs out:
 1. the heading;
 2. every task in progress, each followed by its run rows;
 3. the next two open tasks in display order, or the next three when nothing is in progress;
-4. completed tasks from the current turn, only if rows are left after the run rows;
-5. one summary row counting the hidden tasks in progress, pending, and completed, in that order, such as `+1 in progress, 5 pending, 2 completed` (`+1 進行中、5 待處理、2 已完成` in zh-TW). Zero counts are left out, and with nothing hidden there is no summary row.
+4. the [Other workers](#other-workers) group, with the rows the tasks and their runs leave;
+5. completed tasks from the current turn, only if rows are left after the group; they are drawn above the group, but get their rows after it;
+6. one summary row counting the hidden tasks in progress, pending, and completed, then the hidden other workers, in that order, such as `+1 in progress, 5 pending, 2 completed, 2 workers` (`+1 進行中、5 待處理、2 已完成、2 worker` in zh-TW). Zero counts are left out, and with nothing hidden there is no summary row.
 
 The summary row ends with a dim hint that names the panel key and the state it switches to next; see [Switching views](#switching-views).
 
@@ -99,6 +100,39 @@ The panel asks the Subagents widget to hide a run only once it knows the run's r
 
 Collapsing the panel, or the run leaving the panel, returns the run to the Subagents widget.
 
+## Other workers
+
+An agent often sends out a run that belongs to no todo item: a quick scout, a reviewer, a one-off check.
+The panel lists this session's runs that no task on the panel is bound to as one group, after the task rows and before the summary row:
+
+```text
+● Todos (0/3)
+├─ ◐ #1 API
+│    └ api-worker · astra · 執行中 5s
+├─ ◐ #2 UI
+│    └ ui-worker · astra · 執行中 42s
+├─ ○ #3 Docs
+├─ 其他 worker
+│    ├ scout-x · astra · 執行中 3s
+│    └ ◇ scout-y · sol · 閒置 1m
+└─ ctrl+shift+t 完整
+```
+
+- The heading row reads `Other workers` (`其他 worker` in zh-TW), in muted text. The group is normal work, not a warning, so it has no warning colour or icon.
+- Each run row has the format of a bound run row: the idle and waiting marks, the time in the current state, and the claim marker. A run waiting for a reply keeps the warning colour it has under a task.
+- Runs appear in the host's order.
+- A run counts as bound when its id is in the `metadata.herdr.runs` of a task the panel shows. A run bound to a completed task that has faded out, or to a deleted one, joins the group.
+- When a run gets bound to a task, it moves under that task on the next frame and leaves the group, so it is never drawn twice.
+- With no task at all, the panel still shows its heading and the group.
+
+The group follows the row budget:
+
+- In the focus view, tasks in progress, the next tasks and their runs come first. The group gets the rows left: its heading and as many runs as fit, or nothing when fewer than two rows are left. The runs that do not fit are added to the summary row as `+2 workers` (`+2 worker` in zh-TW), or after the task counts, as in `+5 待處理、2 worker`.
+- In the full view, the group follows the tree and lists every run within `maxWidgetLines`; the rest are counted in the summary row, as in `+3 more (3 pending), 2 workers`.
+- In the collapsed view, the closing row counts the group before the key hint: `└─ +2 worker · ctrl+shift+t 焦點`.
+
+The panel claims a group row the way it claims a bound run row: only a row painted in full, checked by its exact line in the fullscreen layout. A row cut by the width, clipped by the layout, covered by a popup, or folded into the summary stays unclaimed, so the Subagents widget keeps showing that run. When no ledger claims a run, the host's own widget is the fallback that shows it.
+
 ## Overflow
 
 The content-row budget is `maxWidgetLines` (default `12`), and the heading counts
@@ -131,7 +165,7 @@ session resets that tracking, so a fresh session shows the full list again.
 
 1. focus view;
 2. full view;
-3. collapsed: the heading and one dim hint row, `└─ ctrl+shift+t focus`.
+3. collapsed: the heading and one dim hint row, `└─ ctrl+shift+t focus`, which starts with the count of [other workers](#other-workers) when there are any.
 
 The panel starts in the state `view` names, `"focus"` unless you set `"full"`,
 and the next press continues the cycle from there: from `"full"` it goes to
@@ -146,8 +180,8 @@ the hint takes its own closing `└─` row, and only when the row budget has a 
 to spare, so it never pushes a task out. The hint always shows the configured
 key.
 
-Collapsing hides the run rows, so the panel releases its claim on them; the
-Subagents widget can show them again. In the focus and full views the panel
+Collapsing hides the run rows, including the Other workers group, so the panel
+releases its claim on them; the Subagents widget can show them again. In the focus and full views the panel
 claims the run rows it actually paints, as described under
 [Worker runs under a task](#worker-runs-under-a-task).
 
@@ -179,8 +213,8 @@ tasks. Tombstoned tasks are never listed.
 
 ## Localization
 
-The overlay heading, both summary rows, the key hint, the `/todos`
-section headers, and the status words all localize through
+The overlay heading, both summary rows, the key hint, the Other workers heading and
+count, the run states, the `/todos` section headers, and the status words all localize through
 [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n)
 when that package is installed. Bundled locales: `de`, `en`, `es`, `fr`, `pt`,
 `pt-BR`, `ru`, `uk`, `zh` (Simplified), and `zh-TW` (Traditional).

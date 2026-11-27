@@ -13,6 +13,9 @@
   "overlay.next.full": "complet",
   "overlay.next.collapsed": "réduire",
   "overlay.collapsed": "réduit",
+  "overlay.others": "Autres workers",
+  "overlay.worker.one": "worker",
+  "overlay.worker.other": "workers",
 
   "command.no_todos": "Pas encore de tâches. Demandez à l'agent d'en ajouter !",
   "command.requires_interactive": "/todos nécessite le mode interactif",

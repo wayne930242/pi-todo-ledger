@@ -173,16 +173,32 @@ test("collapse releases the claim before it asks for the redraw", async () => {
 	assert.ok(releasedFirst, "release sent before requestRender(true)");
 	const sent = m.probes.length;
 	m.widget.render(80);
-	assert.equal(m.probes.length, sent, "collapsed frame neither probes nor re-sends a release");
+	assert.ok(m.probes.slice(sent).every((p) => !p.claim), "a collapsed frame only counts runs: it sends no claim or release");
 	m.overlay.dispose();
 });
 
-test("no bound runs: the widget never probes the host and never sends a release", async () => {
-	const m = await mount({ mode: "regular", bound: false });
+test("no runs at all: the widget never sends a claim or a release", async () => {
+	const m = await mount({ mode: "regular", rows: () => [] });
 	m.widget.render(80);
 	m.widget.render(80);
 	m.overlay.dispose();
-	assert.equal(m.probes.length, 0);
+	assert.deepEqual(m.claims(), []);
+});
+
+test("fullscreen: an Other workers row the layout clips stays unclaimed; once painted it is claimed", async (ctx) => {
+	const pi = fullscreen();
+	ctx.after(() => pi.tui.stop());
+	const m = await mount({ tui: pi.tui, tasks: 18, bound: false });
+	pi.mountWidget(m.widget);
+	const short = await pi.frame(20);
+	assert.ok(!short.some((l) => l.includes("deep-worker")), "short window clips the group");
+	assert.deepEqual(m.claims().filter((ids) => ids.length), []);
+	const tall = await pi.frame(40);
+	assert.ok(tall.some((l) => l.includes("Other workers")) && tall.some((l) => l.includes("deep-worker")));
+	assert.deepEqual(m.claims().at(-1), ["w1"]);
+	await pi.frame(20);
+	assert.deepEqual(m.claims().at(-1), [], "clipped again: released to the host box");
+	m.overlay.dispose();
 });
 
 test("a release goes out only when an old claim exists", async () => {

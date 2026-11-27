@@ -13,6 +13,9 @@
   "overlay.next.full": "voll",
   "overlay.next.collapsed": "einklappen",
   "overlay.collapsed": "eingeklappt",
+  "overlay.others": "Weitere Worker",
+  "overlay.worker.one": "Worker",
+  "overlay.worker.other": "Worker",
 
   "command.no_todos": "Noch keine Todos. Bitte den Agenten, welche hinzuzufügen!",
   "command.requires_interactive": "/todos erfordert den interaktiven Modus",

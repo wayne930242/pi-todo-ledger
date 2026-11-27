@@ -51,6 +51,7 @@ import {
 } from "./state/store.ts";
 import { registerTodosCommand, registerTodoTool, TOOL_NAME } from "./todo.ts";
 import type { TodoOverlay } from "./todo-overlay.ts";
+import { RUN_ROWS_EVENT } from "./view/live-runs.ts";
 
 // Held in a variable so the type checker does not require the optional peer.
 const I18N_LOADER: string = "@juicesharp/rpiv-i18n/loader";
@@ -159,17 +160,30 @@ export default function (
 	let uiCtx: ExtensionUIContext | undefined;
 	let lifecycleGeneration = 0;
 
+	// The host's run-rows probe. Without a claim it only reads this session's runs.
+	const queryRuns = (p: object) => pi.events.emit(RUN_ROWS_EVENT, p);
+	/** Whether the host lists any run of this session: such runs show on the panel even with no task. */
+	const hostHasRuns = (): boolean => {
+		const p: { rows?: { rows?: unknown } } = {};
+		try {
+			queryRuns(p);
+		} catch {
+			return false;
+		}
+		return Array.isArray(p.rows?.rows) && p.rows.rows.length > 0;
+	};
+
 	async function updateTodoOverlay(
 		resetCompletedDisplayState = false,
 		generation = lifecycleGeneration,
 	): Promise<void> {
 		const hasVisibleTasks = getRenderState().tasks.some((task) => task.status !== "deleted");
-		if (!uiCtx || (!todoOverlay && !hasVisibleTasks)) return;
+		if (!uiCtx || (!todoOverlay && !hasVisibleTasks && !hostHasRuns())) return;
 
 		const { TodoOverlay } = await loadTodoOverlay();
 		if (generation !== lifecycleGeneration || !uiCtx) return;
 
-		todoOverlay ??= new TodoOverlay(p => pi.events.emit('pi-herdr-agents:run-rows:v1', p));
+		todoOverlay ??= new TodoOverlay(queryRuns);
 		todoOverlay.setUICtx(uiCtx);
 		if (resetCompletedDisplayState) todoOverlay.resetCompletedDisplayState();
 		todoOverlay.update();
@@ -309,14 +323,12 @@ export default function (
 		}
 	});
 
-	// Reads getTodos() at render time; do NOT call replayFromBranch here
-	// (branch is stale — message_end runs after tool_execution_end).
-	pi.on("tool_execution_end", async (event) => {
-		if ((event.toolName !== TOOL_NAME && event.toolName !== "subagent") || event.isError) return;
+	// A refresh after something that may change the list or this session's runs.
+	const refresh = async (): Promise<void> => {
 		try {
 			await updateTodoOverlay();
 		} catch (e) {
-			// The tool itself succeeded — a transient overlay-load failure only
+			// The tool or turn itself succeeded — a transient overlay-load failure only
 			// costs this one refresh, and the loader's cleared memo lets the next
 			// update retry. Don't surface that as an extension error. The latched
 			// stale-namespace error still propagates: it never self-heals, and the
@@ -324,7 +336,18 @@ export default function (
 			if (isStaleOverlayModuleError(e)) throw e;
 			console.warn(`[pi-todo-ledger] overlay refresh failed (will retry on next update): ${formatError(e)}`);
 		}
+	};
+
+	// Reads getTodos() at render time; do NOT call replayFromBranch here
+	// (branch is stale — message_end runs after tool_execution_end). A launch or
+	// resume may start a run bound to no task, which the panel shows too.
+	pi.on("tool_execution_end", async (event) => {
+		if (event.isError || ![TOOL_NAME, "subagent", "subagent_resume"].includes(event.toolName)) return;
+		await refresh();
 	});
+
+	// Runs can also start without a tool call of this session; the end of a turn picks them up.
+	pi.on("agent_end", refresh);
 
 	// Evaluate the lazy graph after startup while Pi's boot-time dependency paths
 	// are still stable. This loads no widget and constructs no overlay; those stay

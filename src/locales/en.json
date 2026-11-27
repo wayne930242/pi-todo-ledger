@@ -12,6 +12,9 @@
   "overlay.next.collapsed": "collapse",
   "overlay.collapsed": "collapsed",
   "overlay.separator": ", ",
+  "overlay.others": "Other workers",
+  "overlay.worker.one": "worker",
+  "overlay.worker.other": "workers",
 
   "command.no_todos": "No todos yet. Ask the agent to add some!",
   "command.requires_interactive": "/todos requires interactive mode",

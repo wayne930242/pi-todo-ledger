@@ -96,6 +96,18 @@ export const t: ScopeFn = (key, fallback) => {
 	return scopeImpl(key, fallback);
 };
 
+/** `2 workers`, `2 worker` (zh-TW): the word follows the locale's plural rule; a category the locale lacks uses `other`. */
+export function formatWorkerCount(n: number): string {
+	let category = "other";
+	try {
+		category = new Intl.PluralRules(/^[a-z]{2,3}(?=$|[-_.@])/.exec(renderLocale())?.[0] ?? "en").select(n);
+	} catch {
+		/* unknown locale: other */
+	}
+	const word = t(`overlay.worker.${category}`, "") || t("overlay.worker.other", n === 1 ? "worker" : "workers");
+	return `${n} ${word}`;
+}
+
 const STATUS_LABEL_PENDING = "pending";
 const STATUS_LABEL_IN_PROGRESS = "in progress";
 const STATUS_LABEL_COMPLETED = "completed";

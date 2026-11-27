@@ -49,6 +49,11 @@ Use `metadata.herdr.id` to resolve or message the worker by its run key.
 Use a name with `/boss send` only if it matches the name Straw Boss shows; a launch named `API worker` may appear there as `api-worker`.
 You can still set `owner` by hand.
 
+The panel lists each task's live bound runs under it.
+A run that belongs to no task, such as a scout sent out on the side, is listed under an `Other workers` group (`其他 worker` in zh-TW) after the tasks, in the same row format; the panel shows that group even when the list is empty.
+The panel claims every run row it paints, so the host's Subagents box shows only the runs the panel does not.
+See [docs/overlay.md](docs/overlay.md#other-workers).
+
 `/todos` and the panel's full view indent each open task under its first unfinished blocker; the panel's default focus view lists tasks flat and names every unfinished blocker after the subject. Both show the owner as `@owner`.
 To mark a task as waiting for someone, set `metadata.waitsOn` to their name; to defer it until a particular time, set `metadata.until` to an ISO timestamp, e.g. `2027-01-15T09:00:00+08:00`.
 An open task shows `⏸` with the name or the future deadline in local time.

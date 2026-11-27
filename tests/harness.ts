@@ -44,6 +44,8 @@ export function load(
 		/** Throw from `appendEntry` while this returns true. */
 		failAppend?: () => boolean;
 		guardTimeoutMs?: number;
+		/** An interactive session: `ctx.hasUI` is true, and the real overlay loads into this UI. */
+		ui?: Record<string, unknown>;
 	} = {},
 ): Harness {
 	const bus = new EventEmitter();
@@ -55,9 +57,9 @@ export function load(
 	const shortcuts: string[] = [];
 
 	const ctx = {
-		hasUI: false,
+		hasUI: options.ui !== undefined,
 		cwd: options.cwd ?? "/work/project",
-		ui: { notify: () => {} },
+		ui: options.ui ?? { notify: () => {} },
 		sessionManager: { getSessionId: () => sessionId, getBranch: () => branch },
 	} as unknown as ExtensionContext;
 
@@ -128,9 +130,11 @@ export function load(
 	options.before?.(harness);
 	extension(
 		pi,
-		async () => {
-			throw new Error("overlay not loaded in tests");
-		},
+		options.ui
+			? () => import("../src/todo-overlay.ts")
+			: async () => {
+					throw new Error("overlay not loaded in tests");
+				},
 		options.guardTimeoutMs === undefined ? {} : { guardTimeoutMs: options.guardTimeoutMs },
 	);
 	return harness;

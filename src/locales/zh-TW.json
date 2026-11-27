@@ -11,6 +11,8 @@
 	"overlay.next.collapsed": "收合",
 	"overlay.collapsed": "已收合",
 	"overlay.separator": "、",
+	"overlay.others": "其他 worker",
+	"overlay.worker.other": "worker",
 	"command.no_todos": "目前沒有待辦事項。",
 	"command.requires_interactive": "/todos 需要互動模式",
 	"command.section.pending": "── 待處理 ──",

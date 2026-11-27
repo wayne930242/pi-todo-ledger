@@ -14,6 +14,8 @@
   "overlay.next.collapsed": "收起",
   "overlay.collapsed": "已折叠",
   "overlay.separator": "、",
+  "overlay.others": "其他 worker",
+  "overlay.worker.other": "worker",
 
   "command.no_todos": "暂无任务。可以让 agent 添加一些！",
   "command.requires_interactive": "/todos 需要交互模式",

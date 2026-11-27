@@ -28,7 +28,7 @@ import {
 	type OverlayView,
 	resolveCollapseKey,
 } from "./config.ts";
-import { formatStatusLabel, t } from "./state/i18n-bridge.ts";
+import { formatStatusLabel, formatWorkerCount, t } from "./state/i18n-bridge.ts";
 import {
 	selectHasActive,
 	selectOverlayLayout,
@@ -51,6 +51,7 @@ const OVERLAY_MORE = "more";
 const OVERLAY_KEY_HINT = "{key} {next}";
 const OVERLAY_COLLAPSED = "collapsed";
 const OVERLAY_SEPARATOR = ", ";
+const OVERLAY_OTHERS = "Other workers";
 
 /** What the panel shows: one of the two views, or the two-line collapsed state. */
 type PanelState = OverlayView | "collapsed";
@@ -59,6 +60,18 @@ const NEXT_STATE: Record<PanelState, PanelState> = { focus: "full", full: "colla
 /** English names of the state the key goes to next, as the hint shows them. */
 const NEXT_STATE_NAME: Record<PanelState, string> = { focus: "focus", full: "full", collapsed: "collapse" };
 
+/** Run rows drawn on one frame, for the claim bookkeeping. */
+interface Frame {
+	/** Inline: runs drawn whole. */
+	drawn: string[];
+	/** Fullscreen: runs drawn whole, with their marked line. */
+	marked: Map<string, string>;
+	ticking: boolean;
+}
+
+/** Runs of the Other workers group that fit `rows`: the heading and at least one run, or none. */
+const groupFit = (rows: number, runs: number) => (runs > 0 && rows >= 2 ? Math.min(runs, rows - 1) : 0);
+
 /** What one frame's row drawing needs, shared by the full and focus views. */
 interface DrawContext {
 	theme: Theme;
@@ -66,6 +79,8 @@ interface DrawContext {
 	truncate: (line: string) => string;
 	bound: Map<number, ReturnType<typeof history>>;
 	live: ReturnType<typeof liveRows>;
+	/** Live runs of this session bound to no task on the panel, in the host's order. */
+	others: RunRow[];
 	showIds: boolean;
 	now: number;
 	evidence: "inline" | "screen" | undefined;
@@ -212,7 +227,8 @@ export class TodoOverlay {
 		const snapshot = this.getSnapshot();
 		const visible = this.selectOverlayTasks(snapshot);
 
-		if (visible.length === 0) {
+		// With no task to show, the panel stays for this session's runs (the Other workers group).
+		if (visible.length === 0 && !liveRows(this.query)?.size) {
 			this.finishFrame([]);
 			if (this.widgetRegistered) {
 				this.uiCtx.setWidget(WIDGET_KEY, undefined);
@@ -344,7 +360,9 @@ export class TodoOverlay {
 	private renderWidget(theme: Theme, width: number): string[] {
 		const snapshot = this.getSnapshot();
 		const overlayTasks = this.selectOverlayTasks(snapshot);
-		if (overlayTasks.length === 0) {
+		// Every state asks the host: runs bound to no task join the Other workers group, or its count.
+		const live = liveRows(this.query);
+		if (overlayTasks.length === 0 && !live?.size) {
 			this.finishFrame([]);
 			return [];
 		}
@@ -352,9 +370,8 @@ export class TodoOverlay {
 			overlayTasks.map((t) => [t.id, history(t.metadata?.herdr)] as const),
 		);
 		const hasRuns = [...bound.values()].some((h) => h.runs.length > 0);
-		// Ask the host only when some todo has bound runs and the tree is shown.
-		const live =
-			hasRuns && this.current() !== "collapsed" ? liveRows(this.query) : undefined;
+		const boundIds = new Set([...bound.values()].flatMap((h) => h.runs.map((r) => r.id)));
+		const others = [...(live?.values() ?? [])].filter((r) => !boundIds.has(r.id));
 
 		const plan = planView(overlayTasks);
 		// Keep completed rows in their old slots; fill open slots in display order before budgeting.
@@ -367,7 +384,7 @@ export class TodoOverlay {
 			truncateToWidth(line, width, "…");
 		const counts = selectTodoCounts(overlayState);
 		const hasActive = selectHasActive(overlayState);
-		const showIds = !!live?.size || selectShowTaskIds(overlayState);
+		const showIds = (hasRuns && !!live?.size) || selectShowTaskIds(overlayState);
 
 		const headingColor = hasActive ? "accent" : "dim";
 		const headingIcon = hasActive ? "●" : "○";
@@ -379,20 +396,31 @@ export class TodoOverlay {
 			`${theme.fg(headingColor, headingIcon)} ${theme.fg(headingColor, headingText)}${graph}`,
 		);
 
+		const draw: DrawContext = {
+			theme,
+			width,
+			truncate,
+			bound,
+			live,
+			others,
+			showIds,
+			now: Date.now(),
+			evidence: this.evidence(),
+		};
+
 		// Collapsed view: just the heading + a dim "└─" hint naming the next state,
-		// then the trailing spacer. Short-circuit before the budget math and the
-		// completed-display tracking — nothing is shown to track, and skipping the
-		// tracking when nothing is rendered is correctness, not optimization. The
-		// "off" sentinel is reachable here mid-session (config edited after the
-		// shortcut was bound and the overlay collapsed) — render a static collapsed
-		// label instead of advertising an unbound key.
+		// after the count of other workers, then the trailing spacer. Short-circuit
+		// before the budget math and the completed-display tracking — nothing is
+		// shown to track, and skipping the tracking when nothing is rendered is
+		// correctness, not optimization. The "off" sentinel is reachable here
+		// mid-session (config edited after the shortcut was bound and the overlay
+		// collapsed) — render a static collapsed label instead of advertising an
+		// unbound key. Nothing is claimed; the tick keeps the count current.
 		if (this.current() === "collapsed") {
-			this.finishFrame([]);
+			this.finishFrame([], others.length > 0);
 			const hint = this.keyHint() ?? t("overlay.collapsed", OVERLAY_COLLAPSED);
-			return this.withTrailingSpacer([
-				heading,
-				truncate(`${theme.fg("dim", "└─")} ${theme.fg("dim", hint)}`),
-			]);
+			const count = others.length ? `+${formatWorkerCount(others.length)}` : undefined;
+			return this.withTrailingSpacer([heading, this.closingRow(draw, count, hint)]);
 		}
 
 		// Budget for content rows below the heading (tasks, run rows, summary). The
@@ -404,16 +432,6 @@ export class TodoOverlay {
 			this.uiCtx?.getToolsExpanded?.() === true
 				? Infinity
 				: getMaxWidgetLines() - 1;
-		const draw: DrawContext = {
-			theme,
-			width,
-			truncate,
-			bound,
-			live,
-			showIds,
-			now: Date.now(),
-			evidence: this.evidence(),
-		};
 		const body =
 			this.current() === "full"
 				? this.fullBody(overlayState, plan, bodyBudget, draw)
@@ -433,7 +451,7 @@ export class TodoOverlay {
 		return this.withTrailingSpacer([heading, ...body]);
 	}
 
-	/** The whole dependency tree, budgeted by selectOverlayLayout (the `"full"` view). */
+	/** The whole dependency tree, budgeted by selectOverlayLayout (the `"full"` view), then the Other workers group. */
 	private fullBody(
 		overlayState: { tasks: Task[]; nextId: number },
 		plan: ReturnType<typeof planView>,
@@ -443,42 +461,67 @@ export class TodoOverlay {
 		const layout = selectOverlayLayout(overlayState, bodyBudget);
 		const overflow = layout.hiddenCompleted + layout.truncatedTail;
 		const hint = this.keyHint();
+		const others = draw.others.length;
 		// With nothing to summarize, the hint takes its own row only when one is spare.
-		const needed = layout.visible.reduce((n, task) => n + 1 + this.children(task, draw).length, 0);
+		const needed =
+			layout.visible.reduce((n, task) => n + 1 + this.children(task, draw).length, 0) +
+			(others ? 1 + others : 0);
 		const hintRow = overflow === 0 && hint !== undefined && needed < bodyBudget;
-		const spare = bodyBudget - layout.visible.length - Number(overflow > 0 || hintRow);
+		let spare = bodyBudget - layout.visible.length - Number(overflow > 0 || hintRow);
+		// The group gets the rows the bound runs leave; a group cut short needs the summary row.
+		let rest = spare - this.boundRows(layout.visible, spare, draw);
+		let summarized = overflow > 0;
+		let group = others;
+		if (1 + others > rest) {
+			if (!summarized && rest > 0) {
+				summarized = true;
+				rest--;
+			}
+			group = groupFit(rest, others);
+		}
+		spare -= group ? 1 + group : 0;
+		const frame: Frame = { drawn: [], marked: new Map(), ticking: false };
 		const lines = this.drawTasks(
 			layout.visible.map((task) => ({ task, row: plan.rows.get(task.id) })),
 			spare,
-			overflow === 0 && !hintRow,
+			!summarized && !hintRow && !group,
 			draw,
+			frame,
 		);
+		lines.push(...this.drawGroup(draw.others.slice(0, group), !summarized && !hintRow, draw, frame));
+		this.endFrame(frame, draw);
 		if (hintRow) lines.push(this.closingRow(draw, undefined, hint));
-		if (overflow === 0) return lines;
+		if (!summarized) return lines;
 
-		const overflowParts: string[] = [];
-		if (layout.hiddenCompleted > 0)
-			overflowParts.push(
-				`${layout.hiddenCompleted} ${formatStatusLabel("completed")}`,
+		const parts: string[] = [];
+		if (overflow > 0) {
+			const overflowParts: string[] = [];
+			if (layout.hiddenCompleted > 0)
+				overflowParts.push(
+					`${layout.hiddenCompleted} ${formatStatusLabel("completed")}`,
+				);
+			if (layout.truncatedTail > 0)
+				overflowParts.push(
+					`${layout.truncatedTail} ${formatStatusLabel("pending")}`,
+				);
+			const more = t("overlay.more", OVERLAY_MORE);
+			parts.push(
+				overflowParts.length > 0
+					? `+${overflow} ${more} (${overflowParts.join(", ")})`
+					: `+${overflow} ${more}`,
 			);
-		if (layout.truncatedTail > 0)
-			overflowParts.push(
-				`${layout.truncatedTail} ${formatStatusLabel("pending")}`,
-			);
-		const more = t("overlay.more", OVERLAY_MORE);
-		const summary =
-			overflowParts.length > 0
-				? `+${overflow} ${more} (${overflowParts.join(", ")})`
-				: `+${overflow} ${more}`;
-		lines.push(this.closingRow(draw, summary, hint));
+		}
+		if (group < others) parts.push(`${parts.length ? "" : "+"}${formatWorkerCount(others - group)}`);
+		lines.push(this.closingRow(draw, parts.join(t("overlay.separator", OVERLAY_SEPARATOR)), hint));
 		return lines;
 	}
 
 	/**
 	 * The focus view (default): in-progress tasks with their runs, the next open
-	 * tasks (two, or three when nothing is in progress), then this turn's completed
-	 * rows if room is left, and one summary row counting whatever is hidden. Rows are
-	 * flat, so every unfinished blocker goes to the `⛓` tail.
+	 * tasks (two, or three when nothing is in progress), the Other workers group,
+	 * then this turn's completed rows if room is left, and one summary row counting
+	 * whatever is hidden. Completed rows are drawn before the group but get rows
+	 * after it. Rows are flat, so every unfinished blocker goes to the `⛓` tail.
 	 */
 	private focusBody(
 		overlayTasks: Task[],
@@ -491,21 +534,22 @@ export class TodoOverlay {
 		const completed = overlayTasks.filter((t) => t.status === "completed");
 		const next = pending.slice(0, inProgress.length ? 2 : 3);
 		const total = inProgress.length + pending.length + completed.length;
+		const others = draw.others.length;
 
 		// Task rows first, in priority order; runs take the spare rows in display order;
-		// completed rows get what is left. The summary row is reserved only when needed.
+		// the group and then completed rows get what is left. The summary row is reserved only when needed.
 		const fit = (slots: number) => {
 			const core = [...inProgress, ...next].slice(0, slots);
-			let spare = slots - core.length;
-			for (const task of core) {
-				const n = this.children(task, draw).length;
-				if (n <= spare) spare -= n;
-			}
+			let spare = slots - core.length - this.boundRows(core, slots - core.length, draw);
+			const group = groupFit(spare, others);
+			spare -= group ? 1 + group : 0;
 			const done = completed.slice(0, spare);
-			return { core, done, spare: slots - core.length - done.length, left: spare - done.length };
+			const rows = core.length + done.length + (group ? 1 + group : 0);
+			return { core, done, group, spare: slots - rows, left: spare - done.length };
 		};
 		let shown = fit(bodyBudget);
-		let summarized = shown.core.length + shown.done.length < total;
+		const summarized =
+			shown.core.length + shown.done.length < total || shown.group < others;
 		if (summarized) shown = fit(bodyBudget - 1);
 		// With nothing to summarize, the hint takes its own row only when one is spare;
 		// one row less leaves the same layout then.
@@ -524,12 +568,16 @@ export class TodoOverlay {
 					}
 				: undefined;
 		};
+		const frame: Frame = { drawn: [], marked: new Map(), ticking: false };
 		const lines = this.drawTasks(
 			[...shown.core, ...shown.done].map((task) => ({ task, row: flat(task) })),
 			shown.spare,
-			!summarized && !hintRow,
+			!summarized && !hintRow && !shown.group,
 			draw,
+			frame,
 		);
+		lines.push(...this.drawGroup(draw.others.slice(0, shown.group), !summarized && !hintRow, draw, frame));
+		this.endFrame(frame, draw);
 		if (hintRow) lines.push(this.closingRow(draw, undefined, hint));
 		if (!summarized) return lines;
 
@@ -544,6 +592,7 @@ export class TodoOverlay {
 		)
 			.filter(([n]) => n > 0)
 			.map(([n, status]) => `${n} ${formatStatusLabel(status)}`);
+		if (shown.group < others) parts.push(formatWorkerCount(others - shown.group));
 		const summary = `+${parts.join(t("overlay.separator", OVERLAY_SEPARATOR))}`;
 		lines.push(this.closingRow(draw, summary, hint));
 		return lines;
@@ -555,22 +604,73 @@ export class TodoOverlay {
 		return runs.flatMap((r) => draw.live?.get(r.id) ?? []);
 	}
 
+	/** Rows the tasks' runs take from `spare`, given in display order to each task whose runs all fit, as drawTasks does. */
+	private boundRows(tasks: readonly Task[], spare: number, draw: DrawContext): number {
+		let used = 0;
+		for (const task of tasks) {
+			const n = this.children(task, draw).length;
+			if (used + n <= spare) used += n;
+		}
+		return used;
+	}
+
+	/** End the frame's claim bookkeeping; a group folded into the summary keeps the tick so its count stays current. */
+	private endFrame(frame: Frame, draw: DrawContext) {
+		this.finishFrame(frame.drawn, frame.ticking || draw.others.length > 0, frame.marked);
+	}
+
+	/**
+	 * One run row under `branch`. A run waiting for a reply stands out; idle and
+	 * running rows stay dim, and so does the tree. Only a row shown in full is
+	 * claimed; a truncated one carries no marker.
+	 */
+	private drawRun(lines: string[], r: RunRow, branch: string, draw: DrawContext, frame: Frame) {
+		const { theme, width, truncate, now, evidence } = draw;
+		const line =
+			runState(r) === "waiting"
+				? theme.fg("dim", branch) + theme.fg("warning", runLine(r, now))
+				: theme.fg("dim", branch + runLine(r, now));
+		const whole = visibleWidth(line) <= width;
+		frame.ticking = true;
+		if (whole && evidence === "screen") {
+			const marked = line + this.marker(r.id);
+			frame.marked.set(r.id, marked);
+			lines.push(marked);
+		} else {
+			lines.push(truncate(line));
+			if (whole && evidence === "inline") frame.drawn.push(r.id);
+		}
+	}
+
+	/**
+	 * The Other workers group: a heading row, then this session's runs bound to no
+	 * task, drawn and claimed like bound run rows. `closed` means it ends the panel.
+	 */
+	private drawGroup(runs: RunRow[], closed: boolean, draw: DrawContext, frame: Frame): string[] {
+		if (!runs.length) return [];
+		const { theme, truncate } = draw;
+		const lines = [
+			truncate(`${theme.fg("dim", closed ? "└─" : "├─")} ${theme.fg("muted", t("overlay.others", OVERLAY_OTHERS))}`),
+		];
+		for (const [j, r] of runs.entries())
+			this.drawRun(lines, r, `${closed ? " " : "│"}    ${j === runs.length - 1 ? "└" : "├"} `, draw, frame);
+		return lines;
+	}
+
 	/**
 	 * Draw task rows and, where `spare` rows remain, their run rows; a task whose
-	 * runs do not fit shows `· N runs`. Ends the frame's claim bookkeeping. `closed`
-	 * means no summary row follows, so the last task row takes `└─`.
+	 * runs do not fit shows `· N runs`. `closed` means nothing follows, so the last
+	 * task row takes `└─`.
 	 */
 	private drawTasks(
 		entries: { task: Task; row?: PlanRow }[],
 		spare: number,
 		closed: boolean,
 		draw: DrawContext,
+		frame: Frame,
 	): string[] {
-		const { theme, width, truncate, live, showIds, now, evidence } = draw;
+		const { theme, truncate, live, showIds } = draw;
 		const lines: string[] = [];
-		const drawn: string[] = [];
-		let ticking = false;
-		const marked = new Map<string, string>();
 		for (const [i, { task, row }] of entries.entries()) {
 			const { older } = draw.bound.get(task.id) ?? history(undefined);
 			const children = this.children(task, draw);
@@ -590,28 +690,10 @@ export class TodoOverlay {
 			);
 			if (!fits) continue;
 			spare -= children.length;
-			for (const [j, r] of children.entries()) {
-				const indent = "  ".repeat(row?.depth ?? 0);
-				const branch = `${last ? " " : "│"}    ${indent}${j === children.length - 1 ? "└" : "├"} `;
-				// A run waiting for a reply stands out; idle and running rows stay dim. The tree stays dim.
-				const childLine =
-					runState(r) === "waiting"
-						? theme.fg("dim", branch) + theme.fg("warning", runLine(r, now))
-						: theme.fg("dim", branch + runLine(r, now));
-				const whole = visibleWidth(childLine) <= width;
-				ticking = true;
-				// Only a row shown in full is claimed; a truncated one carries no marker.
-				if (whole && evidence === "screen") {
-					const line = childLine + this.marker(r.id);
-					marked.set(r.id, line);
-					lines.push(line);
-				} else {
-					lines.push(truncate(childLine));
-					if (whole && evidence === "inline") drawn.push(r.id);
-				}
-			}
+			const indent = "  ".repeat(row?.depth ?? 0);
+			for (const [j, r] of children.entries())
+				this.drawRun(lines, r, `${last ? " " : "│"}    ${indent}${j === children.length - 1 ? "└" : "├"} `, draw, frame);
 		}
-		this.finishFrame(drawn, ticking, marked);
 		return lines;
 	}
 
