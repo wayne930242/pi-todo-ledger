@@ -65,7 +65,7 @@ The full view (`"view": "full"`) draws the whole dependency tree:
 - **Glyphs** — `○` pending, `◐` in_progress, `✓` completed, `✗` deleted.
   Completed and deleted subjects render dim and struck through.
 - **activeForm** — appended dim in parentheses, only while the task is
-  `in_progress`.
+  `in_progress` and only when it differs from the subject (ignoring leading and trailing spaces).
 - **Waiting** — `⏸` replaces the open-task glyph when `metadata.waitsOn` names a party or `metadata.until` is an ISO time in the future. The row shows the party, the local deadline, or both. An elapsed deadline no longer marks a task as waiting.
 - **Owner** — `@owner` follows the subject in muted text.
 - **Dependencies** — open rows nest under the first unfinished `blockedBy` id; siblings are visited in id order. Other unfinished blockers appear in the `⛓ #1,#2` tail. If another prerequisite interrupts a branch, `↳ #N` names the parent the row returns to.
@@ -79,7 +79,13 @@ Rows longer than the terminal width are truncated with `…`.
 ## Worker runs under a task
 
 When pi-herdr-agents is loaded, each task lists its live bound runs (`metadata.herdr.runs`) under its row: name, short model, state, and time in that state.
-A pending cancel replaces the state with `cancelling` or `cancel unconfirmed`.
+A run that is not working keeps its one row and gains a mark before its name:
+
+- `◇ … · idle 3m` (zh-TW `閒置`), dim: its turn ended, or a persistent specialist sits between tasks (Maestro lifecycle `waiting`).
+- `? … · waiting 42s` (zh-TW `等待回覆`), in the warning color: the pane shows a dialog, approval, or question (Maestro lifecycle `blocked`).
+
+Starting and working runs carry no mark; other lifecycle kinds show their state word only.
+A pending cancel replaces the state with `cancelling` or `cancel unconfirmed` and drops the mark.
 Run rows count against the row budget; a task whose runs do not fit shows `· N runs` instead.
 
 The panel asks the Subagents widget to hide a run only once it knows the run's row reached the screen:

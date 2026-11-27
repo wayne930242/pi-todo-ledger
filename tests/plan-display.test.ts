@@ -60,7 +60,7 @@ test("live projection draws only bound runs, then releases the claim on collapse
 	const old = process.env.LC_ALL;
 	process.env.LC_ALL = 'zh_Hant_TW.UTF-8';
 	ctx.after(()=>{if(old===undefined) delete process.env.LC_ALL; else process.env.LC_ALL=old;});
-	const rows = [ ["todograph-build", "gpt-6.2-astra", "active", 240], ["todograph-ui", "claude-opus-4-5", "waiting", 42], ["todograph-review", "gpt-6.2-sol", "active", 60] ] as const;
+	const rows = [ ["todograph-build", "gpt-6.2-astra", "active", 240], ["todograph-ui", "claude-opus-4-5", "active", 42], ["todograph-review", "gpt-6.2-sol", "active", 60] ] as const;
 	const claims: string[][] = [];
 	const overlay = new TodoOverlay(p => { if (p.claim) claims.push(p.claim.ids); p.rows = { version: 1, rows: rows.map(([name,model,kind,time],i) => ({ id:name,name,model,agent:i===2?"reviewer":"worker",phase:{kind,label:i===1?"thread_wait":undefined},startedAt:Date.now()-time*1000 })) }; });
 	const tasks = ["sb 插單規則", "ledger 0.6.0", "sb 計畫圖", "maestro 研究"].map((subject,i) => ({id:61+i,subject,graph:"fan-out/fan-in",status:["completed","in_progress","in_progress","pending"][i],metadata:i===3?{waitsOn:"boss"}:{herdr:{runs:(i===1?rows.slice(0,1):i===2?rows.slice(1):[]).map(([name])=>({id:name,name}))}}}));

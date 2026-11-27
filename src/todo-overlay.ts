@@ -40,7 +40,7 @@ import { type PlanRow, planView } from "./view/plan.ts";
 import type { Task } from "./tool/types.ts";
 
 import { history } from "./ledger/herdr-runs.ts";
-import { liveRows, runLine, type Query, type RunRow } from "./view/live-runs.ts";
+import { liveRows, runLine, runState, type Query, type RunRow } from "./view/live-runs.ts";
 
 const WIDGET_KEY = "rpiv-todos";
 
@@ -554,10 +554,12 @@ export class TodoOverlay {
 			spare -= children.length;
 			for (const [j, r] of children.entries()) {
 				const indent = "  ".repeat(row?.depth ?? 0);
-				const childLine = theme.fg(
-					"dim",
-					`${last ? " " : "│"}    ${indent}${j === children.length - 1 ? "└" : "├"} ${runLine(r, now)}`,
-				);
+				const branch = `${last ? " " : "│"}    ${indent}${j === children.length - 1 ? "└" : "├"} `;
+				// A run waiting for a reply stands out; idle and running rows stay dim. The tree stays dim.
+				const childLine =
+					runState(r) === "waiting"
+						? theme.fg("dim", branch) + theme.fg("warning", runLine(r, now))
+						: theme.fg("dim", branch + runLine(r, now));
 				const whole = visibleWidth(childLine) <= width;
 				ticking = true;
 				// Only a row shown in full is claimed; a truncated one carries no marker.

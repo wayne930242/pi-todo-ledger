@@ -86,7 +86,8 @@ export function formatPlanTaskLine(t: Task, theme: Theme, showId: boolean, row?:
 	line += ` ${subject}`;
 	if (t.owner) line += ` ${theme.fg("muted", `@${sanitizeTerminalText(t.owner)}`)}`;
 	if (wait) line += ` ${theme.fg("muted", wait)}`;
-	if (t.status === "in_progress" && t.activeForm) {
+	// An activeForm that only repeats the subject adds nothing.
+	if (t.status === "in_progress" && t.activeForm && t.activeForm.trim() !== t.subject.trim()) {
 		line += ` ${theme.fg("muted", `(${sanitizeTerminalText(t.activeForm)})`)}`;
 	}
 	if (row?.graph) line += ` ${theme.fg("dim", row.graph)}`;

@@ -34,14 +34,14 @@ function env(ctx: TestContext, config?: object, locale = "C") {
 	ctx.mock.timers.enable({ apis: ["Date"], now: NOW });
 }
 
-type Spec = { id: number; subject: string; status: string; blockedBy?: number[]; metadata?: object };
+type Spec = { id: number; subject: string; status: string; activeForm?: string; blockedBy?: number[]; metadata?: object };
 const task = (id: number, status = "pending", extra: Partial<Spec> = {}): Spec => ({ id, subject: `t${id}`, status, ...extra });
 const bound = (...runs: string[]) => ({ metadata: { herdr: { runs: runs.map((id) => ({ id, name: id })) } } });
 const run = (id: string, secs = 5): RunRow => ({
 	id, name: id, model: "gpt-6.2-astra", agent: "worker", startedAt: NOW - secs * 1000, phase: { kind: "active" },
 });
 
-async function mount(tasks: Spec[], rows: RunRow[] = [], mode = "regular") {
+async function mount(tasks: Spec[], rows: RunRow[] = [], mode = "regular", look = theme) {
 	const claims: string[][] = [];
 	const overlay = new TodoOverlay((p) => {
 		if (p.claim) claims.push([...p.claim.ids]);
@@ -52,9 +52,9 @@ async function mount(tasks: Spec[], rows: RunRow[] = [], mode = "regular") {
 	setActiveRenderSession(h.sessionId);
 	let widget!: Component;
 	overlay.setUICtx({
-		theme,
+		theme: look,
 		setWidget: (_k: string, f?: (tui: object, t: Theme) => Component) => {
-			if (f) widget = f({ mode, requestRender() {} }, theme);
+			if (f) widget = f({ mode, requestRender() {} }, look);
 		},
 		getToolsExpanded: () => false,
 	} as unknown as ExtensionUIContext);
@@ -206,4 +206,39 @@ test("focus view claims a run drawn on two frames, and never one folded into the
 	assert.ok(!rows.some((l) => l.includes("hidden")), "the task with the run is in the summary");
 	assert.deepEqual(folded.claims, []);
 	folded.overlay.dispose();
+});
+
+for (const view of ["focus", "full"]) {
+	test(`${view} view: an activeForm equal to the subject is not repeated; a different one is`, async (ctx) => {
+		env(ctx, { view }, "zh_TW.UTF-8");
+		const m = await mount([
+			{ ...task(1, "in_progress"), subject: "執行等待", activeForm: " 執行等待 " },
+			{ ...task(2, "in_progress"), subject: "補測試", activeForm: "撰寫測試中" },
+		]);
+		const rows = m.render();
+		assert.deepEqual(rows, ["● Todos (0/2)", "├─ ◐ 執行等待", "└─ ◐ 補測試 (撰寫測試中)", ""]);
+		m.overlay.dispose();
+	});
+}
+
+test("idle and waiting run rows carry a mark and a status word on their one row, in zh-TW", async (ctx) => {
+	env(ctx, undefined, "zh_TW.UTF-8");
+	const idle: RunRow = { ...run("fixture-test", 600), phase: { kind: "waiting", since: NOW - 180_000 } };
+	const asking: RunRow = { ...run("x", 600), model: "gpt-6.2-sol", phase: { kind: "blocked", since: NOW - 42_000 } };
+	const tasks = [task(1, "in_progress", bound("fixture-test", "x")), task(2)];
+	const colors: string[] = [];
+	const look = { fg: (c: string, s: string) => { if (s.includes(" · ")) colors.push(c); return s; }, strikethrough: (s: string) => s } as Theme;
+	const m = await mount(tasks, [idle, asking], "regular", look);
+	assert.deepEqual(m.render(), [
+		"● Todos (0/2)",
+		"├─ ◐ #1 t1",
+		"│    ├ ◇ fixture-test · astra · 閒置 3m",
+		"│    └ ? x · sol · 等待回覆 42s",
+		"└─ ○ #2 t2",
+		"",
+	]);
+	assert.deepEqual(colors, ["dim", "warning"], "idle is dim; waiting stands out, its tree prefix stays dim");
+	m.render();
+	assert.deepEqual(m.claims, [["fixture-test", "x"]], "the status word leaves the claim intact");
+	m.overlay.dispose();
 });

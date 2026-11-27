@@ -46,22 +46,50 @@ export function shortModel(model: string) {
 			.join("-") || base
 	);
 }
+/**
+ * What a run row says about its subagent, from Maestro's `projectLifecycle` kind:
+ * Herdr `working` is `active`; Herdr `done` or `idle` after work (the turn ended, or a
+ * persistent specialist sits between tasks) is `waiting`, shown as idle; Herdr `blocked`
+ * (a dialog, approval or question in the pane) is `blocked`, shown as waiting for a reply.
+ * Other kinds (interrupted, stalled, finalizing, ...) and unknown ones keep the plain row.
+ */
+export type RunState = "running" | "idle" | "waiting";
+const STATES: Record<string, RunState> = {
+	starting: "running",
+	running: "running",
+	active: "running",
+	waiting: "idle",
+	blocked: "waiting",
+};
+/** Single-cell marks distinct from the task glyphs (○ ◐ ✓ ✗ ⏸); running rows carry none. */
+const MARKS: Partial<Record<RunState, string>> = { idle: "◇", waiting: "?" };
+function pendingCancel(row: RunRow) {
+	return row.cancel === "requested" || row.cancel === "unconfirmed"
+		? `cancel.${row.cancel}`
+		: undefined;
+}
+/** The row's state, or undefined when a pending cancel leads or the kind is not mapped. */
+export function runState(row: RunRow): RunState | undefined {
+	if (pendingCancel(row)) return undefined;
+	return Object.hasOwn(STATES, row.phase.kind) ? STATES[row.phase.kind] : undefined;
+}
 const words: Record<string, string> = {
 	"cancel.requested": "cancelling",
 	"cancel.unconfirmed": "cancel unconfirmed",
 	"tool.thread_wait": "waiting for thread",
 	"active.reviewer": "reviewing",
 	"kind.active": "running",
+	"state.idle": "idle",
+	"state.waiting": "waiting",
 };
 export function runLine(row: RunRow, now: number) {
 	const { kind, label, since } = row.phase;
 	// A pending cancel outranks the lifecycle: the host hides its own warning for claimed rows.
-	const cancel =
-		row.cancel === "requested" || row.cancel === "unconfirmed"
-			? `cancel.${row.cancel}`
-			: undefined;
+	const cancel = pendingCancel(row);
+	const state = runState(row);
 	const keys = [
 		cancel,
+		state && state !== "running" && `state.${state}`,
 		label && `tool.${label}`,
 		kind === "active" && row.agent && `active.${row.agent}`,
 		`kind.${kind}`,
@@ -84,8 +112,9 @@ export function runLine(row: RunRow, now: number) {
 				? `${Math.floor(s / 60)}m`
 				: `${Math.floor(s / 3600)}h${String(Math.floor(s / 60) % 60).padStart(2, "0")}m`;
 	return sanitizeTerminalText(
-		[row.name, row.model && shortModel(row.model), `${word} ${time}`]
-			.filter(Boolean)
-			.join(" · "),
+		(state && MARKS[state] ? `${MARKS[state]} ` : "") +
+			[row.name, row.model && shortModel(row.model), `${word} ${time}`]
+				.filter(Boolean)
+				.join(" · "),
 	);
 }

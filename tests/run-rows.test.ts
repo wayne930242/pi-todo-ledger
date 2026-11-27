@@ -4,7 +4,7 @@ import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent"
 import { type Component, Container, Spacer, Text, TuiAltScreen } from "@earendil-works/pi-tui";
 import { setActiveRenderSession } from "../src/todo.ts";
 import { TodoOverlay } from "../src/todo-overlay.ts";
-import { type Probe, type RunRow, runLine } from "../src/view/live-runs.ts";
+import { type Probe, type RunRow, runLine, runState } from "../src/view/live-runs.ts";
 import { load } from "./harness.ts";
 
 // Pi's fullscreen chat layout is internal (not in the package exports); load it by path like Pi does.
@@ -12,12 +12,15 @@ const { createChatViewport } = (await import(
 	new URL("../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/chat-viewport.js", import.meta.url).href
 )) as { createChatViewport: (o: Record<string, Component>) => { root: Component } };
 
-const theme = { fg: (_c: string, s: string) => s, strikethrough: (s: string) => s } as Theme;
+const plain = { fg: (_c: string, s: string) => s, strikethrough: (s: string) => s } as Theme;
+/** Colors like a real theme, so a row is several ANSI segments. */
+const ansi = { fg: (c: string, s: string) => `\x1b[38;5;${c === "warning" ? 179 : 242}m${s}\x1b[39m`, strikethrough: (s: string) => s } as Theme;
 const worker = (extra: Partial<RunRow> = {}): RunRow => ({
 	id: "w1", name: "deep-worker", model: "gpt-6.2-astra", agent: "worker", startedAt: Date.now() - 5000, phase: { kind: "active" }, ...extra,
 });
 
-async function mount(opts: { mode?: string; tui?: object; bound?: boolean; tasks?: number; expanded?: boolean; rows?: () => RunRow[] }) {
+async function mount(opts: { mode?: string; tui?: object; bound?: boolean; tasks?: number; expanded?: boolean; rows?: () => RunRow[]; theme?: Theme }) {
+	const theme = opts.theme ?? plain;
 	const probes: Probe[] = [];
 	const overlay = new TodoOverlay((p) => {
 		probes.push(p.claim ? { claim: { ...p.claim, ids: [...p.claim.ids] } } : {});
@@ -204,5 +207,49 @@ for (const [cancel, en, zh] of [["requested", "cancelling", "取消中"], ["unco
 		assert.equal(runLine(row, 42_000), `deep-worker · astra · ${en} 42s`);
 		process.env.LC_ALL = "zh_TW.UTF-8";
 		assert.equal(runLine(row, 42_000), `deep-worker · astra · ${zh} 42s`);
+	});
+}
+
+// Maestro's projectLifecycle kinds: Herdr "working" → active, "blocked" (a dialog or question in the pane) → blocked,
+// "done"/"idle" after work (turn ended, persistent specialist between tasks) → waiting.
+for (const [kind, state, en, zh] of [
+	["active", "running", "deep-worker · astra · running 3m", "deep-worker · astra · 執行中 3m"],
+	["running", "running", "deep-worker · astra · running 3m", "deep-worker · astra · 執行中 3m"],
+	["starting", "running", "deep-worker · astra · starting 3m", "deep-worker · astra · 啟動中 3m"],
+	["waiting", "idle", "◇ deep-worker · astra · idle 3m", "◇ deep-worker · astra · 閒置 3m"],
+	["blocked", "waiting", "? deep-worker · astra · waiting 3m", "? deep-worker · astra · 等待回覆 3m"],
+	["warping", undefined, "deep-worker · astra · warping 3m", "deep-worker · astra · warping 3m"],
+] as const) {
+	test(`lifecycle kind ${kind} maps to ${state ?? "today's row"} in en and zh-TW`, (ctx) => {
+		const old = process.env.LC_ALL;
+		ctx.after(() => { if (old === undefined) delete process.env.LC_ALL; else process.env.LC_ALL = old; });
+		const row = worker({ phase: { kind }, startedAt: 0 });
+		assert.equal(runState(row), state);
+		process.env.LC_ALL = "C";
+		assert.equal(runLine(row, 180_000), en);
+		process.env.LC_ALL = "zh_TW.UTF-8";
+		assert.equal(runLine(row, 180_000), zh);
+	});
+}
+
+test("a pending cancel outranks idle: no idle mark, the cancel word leads", () => {
+	const row = worker({ cancel: "requested", phase: { kind: "waiting" }, startedAt: 0 });
+	assert.equal(runState(row), undefined);
+	assert.equal(runLine(row, 42_000), "deep-worker · astra · cancelling 42s");
+});
+
+for (const kind of ["waiting", "blocked"]) {
+	test(`fullscreen: a colored ${kind} run row with its zh-TW status word is claimed by its exact painted line`, async (ctx) => {
+		const old = process.env.LC_ALL;
+		ctx.after(() => { if (old === undefined) delete process.env.LC_ALL; else process.env.LC_ALL = old; });
+		process.env.LC_ALL = "zh_TW.UTF-8";
+		const pi = fullscreen();
+		ctx.after(() => pi.tui.stop());
+		const m = await mount({ tui: pi.tui, tasks: 3, rows: () => [worker({ phase: { kind } })], theme: ansi });
+		pi.mountWidget(m.widget);
+		const screen = await pi.frame(40);
+		assert.ok(screen.some((l) => l.includes(kind === "waiting" ? "◇ deep-worker" : "? deep-worker")));
+		assert.deepEqual(m.claims().at(-1), ["w1"]);
+		m.overlay.dispose();
 	});
 }
