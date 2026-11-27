@@ -77,3 +77,19 @@ test("explicit zh-TW wins over any system locale; explicit en wins over zh_TW", 
 	apply("en");
 	assert.equal(word(), "running");
 });
+
+test("system default follows LC_ALL > LC_MESSAGES > LANG for Traditional, though the SDK reads LANG first", (ctx) => {
+	const { apply } = sandbox(ctx);
+	process.env.LANG = "en_US.UTF-8";
+	process.env.LC_ALL = "zh_TW.UTF-8";
+	apply("en"); // the SDK derived `en` from LANG
+	assert.equal(word(), "執行中");
+	delete process.env.LC_ALL;
+	process.env.LC_MESSAGES = "zh_Hant_TW.UTF-8";
+	apply("en");
+	assert.equal(word(), "執行中");
+	process.env.LC_MESSAGES = "en_US.UTF-8";
+	process.env.LANG = "zh_TW.UTF-8";
+	apply("zh");
+	assert.equal(word(), "running", "LC_MESSAGES outranks LANG");
+});

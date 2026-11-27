@@ -50,6 +50,8 @@ try {
 	scopeImpl = (_key, fallback) => fallback;
 }
 
+const TRADITIONAL = /^zh[-_](?:TW|Hant)(?:[-_.@]|$)/i;
+
 // The SDK republishes this plain-data snapshot on every locale change, a /languages pick included.
 const SDK_STATE = Symbol.for("rpiv-i18n");
 type SdkState = { readonly locale?: string } | undefined;
@@ -76,20 +78,21 @@ function explicitLocale(state: SdkState): string | undefined {
 
 /**
  * The locale to render in. An explicit choice wins as given: `zh` stays Simplified and `zh-TW`
- * is Traditional. Without one, the SDK derived its code from the system locale and dropped the
- * region, so the full system locale decides (`zh_TW.UTF-8` → Traditional).
+ * is Traditional. Without one, the system locale is the default, read in POSIX order
+ * (`LC_ALL`, then `LC_MESSAGES`, then `LANG`). The SDK reads `LANG` first and drops the
+ * region, so a Traditional system locale decides here; any other keeps the SDK's code.
  */
 export function renderLocale(): string {
-	const env = process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || '';
+	const sys = process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || '';
 	const state = (globalThis as { [k: symbol]: SdkState })[SDK_STATE];
 	const locale = state?.locale;
-	if (!locale) return env;
+	if (!locale) return sys;
 	if (explicitLocale(state) !== undefined) return locale;
-	return env.split(/[-_.@]/)[0]?.toLowerCase() === locale.toLowerCase() ? env : locale;
+	return TRADITIONAL.test(sys) ? sys : locale;
 }
 
 export const t: ScopeFn = (key, fallback) => {
-	if (/^zh[-_](?:TW|Hant)(?:[-_.@]|$)/i.test(renderLocale())) return traditional[key] ?? fallback;
+	if (TRADITIONAL.test(renderLocale())) return traditional[key] ?? fallback;
 	return scopeImpl(key, fallback);
 };
 

@@ -13,9 +13,14 @@ export function history(value: unknown): { runs: BoundRun[]; older: number } {
 			r && typeof r.id === "string" && typeof r.name === "string",
 	);
 	// Imported or hand-edited metadata may repeat an id: keep its last record, in its last position.
-	const unique = valid.filter(
-		(r, i) => !valid.slice(i + 1).some((later) => later.id === r.id),
-	);
+	const seen = new Set<string>();
+	const unique: BoundRun[] = [];
+	for (let i = valid.length - 1; i >= 0; i--) {
+		if (seen.has(valid[i].id)) continue;
+		seen.add(valid[i].id);
+		unique.push(valid[i]);
+	}
+	unique.reverse();
 	const stored =
 		typeof h.older === "number" && Number.isSafeInteger(h.older) && h.older > 0
 			? h.older

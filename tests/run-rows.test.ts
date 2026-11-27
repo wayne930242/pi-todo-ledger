@@ -107,6 +107,29 @@ test("fullscreen: a run row on the painted screen is claimed, and released once 
 	assert.deepEqual(m.claims().at(-1), []);
 });
 
+test("fullscreen: a popup over the run row releases the claim; one elsewhere keeps it", async (ctx) => {
+	const pi = fullscreen();
+	ctx.after(() => pi.tui.stop());
+	const m = await mount({ tui: pi.tui, tasks: 3 });
+	pi.mountWidget(m.widget);
+	const tall = await pi.frame(40);
+	const row = tall.findIndex((l) => l.includes("deep-worker"));
+	assert.ok(row > 0);
+	assert.deepEqual(m.claims().at(-1), ["w1"]);
+	const elsewhere = pi.tui.showOverlay(new Text("NOTE", 0, 0), { row: 0, col: 0, width: 10, nonCapturing: true });
+	await pi.frame(40);
+	assert.deepEqual(m.claims().at(-1), ["w1"], "a popup that misses the row leaves the claim");
+	elsewhere.hide();
+	const over = pi.tui.showOverlay(new Text("POPUP OVER THE NAME", 0, 0), { row, col: 4, width: 22, nonCapturing: true });
+	const covered = await pi.frame(40);
+	assert.ok(!covered[row].includes("deep-worker"), "the popup hides the name");
+	assert.deepEqual(m.claims().at(-1), [], "a covered row is not on screen");
+	over.hide();
+	await pi.frame(40);
+	assert.deepEqual(m.claims().at(-1), ["w1"]);
+	m.overlay.dispose();
+});
+
 test("fullscreen without getScreenLines gives no evidence, so nothing is claimed", async () => {
 	const m = await mount({ mode: "fullscreen" });
 	m.widget.render(80);

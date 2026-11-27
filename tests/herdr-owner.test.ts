@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { history } from "../src/ledger/herdr-runs.ts";
 import { load, snapshots, type Harness } from "./harness.ts";
 
 const name = "API worker: keep the full name";
@@ -88,6 +89,16 @@ test("imported duplicate run ids collapse to the last record on read, so the nex
 	// Unique by id (last wins): b, A2, c, d, e, f, G2 → seven; the cap keeps six, then the new run pushes one more out.
 	assert.deepEqual(herdr.runs.map(r => r.name), ["c", "d", "e", "f", "G2", "New"]);
 	assert.equal(herdr.older, 2);
+});
+
+test("reading a large imported history is linear in its length", () => {
+	const runs = Array.from({ length: 16_000 }, (_, i) => ({ id: `r${i}`, name: `r${i}` }));
+	const t0 = performance.now();
+	const read = history({ runs });
+	const ms = performance.now() - t0;
+	assert.deepEqual(read.runs.map(r => r.id), runs.slice(-6).map(r => r.id));
+	assert.equal(read.older, 16_000 - 6);
+	assert.ok(ms < 50, `history() took ${ms.toFixed(1)} ms`);
 });
 
 for (const intervening of ["update", "clear", "session_tree"] as const) {

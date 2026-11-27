@@ -59,7 +59,7 @@ export class TodoOverlay {
 
 	private previous: string[] = [];
 	private claimed: string[] = [];
-	/** Markers of the run rows drawn on the frame being painted, awaiting the screen check. */
+	/** Run rows (with markers) drawn on the frame being painted, awaiting the screen check. */
 	private onScreen?: Map<string, string>;
 	private screenCheckQueued = false;
 	private markers = new Map<string, string>();
@@ -99,10 +99,10 @@ export class TodoOverlay {
 	}
 
 	/**
-	 * A zero-width marker unique to this panel and run: an OSC 8 hyperlink close
-	 * with an `id` parameter. Pi already ends every row with an OSC 8 close, and
-	 * its layout keeps escape sequences of the rows it paints, so the marker is on
-	 * the painted screen exactly when the row is.
+	 * An invisible marker unique to this panel and run. It has the form of an OSC 8
+	 * sequence with an `id` parameter and no URI; Pi counts it as zero width, and
+	 * terminals drop it (Ghostty and Herdr discard it as an invalid OSC 8). It only
+	 * makes the row's text unique, so the screen check can find the row.
 	 */
 	private marker(id: string): string {
 		let m = this.markers.get(id);
@@ -114,12 +114,14 @@ export class TodoOverlay {
 	}
 
 	/**
-	 * Claim the rows whose marker is on the frame Pi just painted. render() runs
-	 * inside Pi's synchronous frame, so a microtask reads that frame's screen.
-	 * A changed claim asks for one more frame so the Subagents widget follows.
+	 * Claim the rows Pi painted unchanged on the frame it just wrote. render() runs
+	 * inside Pi's synchronous frame, so a microtask reads that frame's screen. A
+	 * row counts only when a screen line starts with the exact row drawn: a clipped
+	 * row is absent, and a popup, highlight or selection drawn over it changes the
+	 * line. A changed claim asks for one more frame so the Subagents widget follows.
 	 */
-	private checkScreen(markers: Map<string, string>) {
-		this.onScreen = markers;
+	private checkScreen(rows: Map<string, string>) {
+		this.onScreen = rows;
 		if (this.screenCheckQueued) return;
 		this.screenCheckQueued = true;
 		queueMicrotask(() => {
@@ -136,7 +138,7 @@ export class TodoOverlay {
 				/* no evidence */
 			}
 			const ids = [...pending]
-				.filter(([, m]) => screen.some((line) => line.includes(m)))
+				.filter(([, row]) => screen.some((line) => line.startsWith(row)))
 				.map(([id]) => id);
 			const changed =
 				ids.length !== this.claimed.length ||
@@ -149,11 +151,11 @@ export class TodoOverlay {
 	private finishFrame(
 		ids: string[],
 		ticking = ids.length > 0,
-		markers?: Map<string, string>,
+		rows?: Map<string, string>,
 	) {
-		if (markers?.size) {
+		if (rows?.size) {
 			this.previous = [];
-			this.checkScreen(markers);
+			this.checkScreen(rows);
 		} else {
 			this.onScreen = undefined;
 			// Inline: only renew claims for children drawn on both this and the preceding frame.
@@ -362,7 +364,7 @@ export class TodoOverlay {
 		let ticking = false;
 		const now = Date.now();
 		const evidence = this.evidence();
-		const markers = new Map<string, string>();
+		const marked = new Map<string, string>();
 		for (const [i, task] of layout.visible.entries()) {
 			const { runs, older } = bound.get(task.id) ?? history(undefined);
 			const children = runs.flatMap((r) => live?.get(r.id) ?? []);
@@ -393,16 +395,16 @@ export class TodoOverlay {
 				ticking = true;
 				// Only a row shown in full is claimed; a truncated one carries no marker.
 				if (whole && evidence === "screen") {
-					const m = this.marker(r.id);
-					markers.set(r.id, m);
-					lines.push(childLine + m);
+					const line = childLine + this.marker(r.id);
+					marked.set(r.id, line);
+					lines.push(line);
 				} else {
 					lines.push(truncate(childLine));
 					if (whole && evidence === "inline") drawn.push(r.id);
 				}
 			}
 		}
-		this.finishFrame(drawn, ticking, markers);
+		this.finishFrame(drawn, ticking, marked);
 
 		const newlyDisplayedCompletedTaskIds = overlayTasks
 			.filter(
