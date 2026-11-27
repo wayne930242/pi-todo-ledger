@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.2
+
+- Runs of this session that belong to no todo, such as a scout sent out on the side, now show on the panel as an `Other workers` group (`其他 worker` in zh-TW) after the tasks, in the same row format as bound runs. It is not a warning. With no todos, the panel shows its heading and the group.
+- Tasks keep their rows first; the group gets the rows left, and runs that do not fit are counted in the summary row, such as `+5 待處理、2 worker`. The collapsed row counts them too. The panel claims only the group rows it paints, so the host's Subagents box keeps the rest. A run that gets bound later moves under its todo.
+
 ## 0.7.1
 
 - The panel key (`collapseKey`, default `ctrl+shift+t`) now cycles focus view → full view → collapsed → focus view, starting from the configured `view`. The chosen state lasts for the session.
