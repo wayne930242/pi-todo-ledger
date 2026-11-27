@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0
+
+- The panel shows each live Herdr run beneath its todo. It claims only the run rows it displays, so the Subagents widget can still show runs the panel leaves out.
+- Focus view is now the default: the panel lists work in progress and the next open tasks, then summarizes the rest. Set `view` to `"full"` to see the dependency tree instead.
+- The panel omits an `activeForm` that repeats the task subject. Run rows distinguish idle and waiting runs once the host reports those states.
+
 ## 0.6.0
 
 - A successful Herdr `subagent` launch with a todo `item` sets the task's owner to the full child name and records the run id in `metadata.herdr.id`. Worktree launches that return a pane id also set `metadata.herdr.pane`. Namespace validators and guards can refuse the assignment without undoing the launch.
