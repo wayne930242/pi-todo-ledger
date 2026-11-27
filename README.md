@@ -42,6 +42,14 @@ The new fields are optional parameters of `create` (and of each `tasks[]` item) 
 `evidence` items are appended after the existing ones; `at` defaults to the time of the call.
 `get` shows all three fields.
 
+`create`, `update`, `get`, and `list` print each task's stable `uid` if it has one (for example, `t_k7wrx2jzfq`).
+Pass that value as a subagent's `item`; use the shorter `#id` only within the list.
+
+The panel and `/todos` indent each open task under its first unfinished blocker and show its owner as `@owner`.
+To mark a task as waiting for someone, set `metadata.waitsOn` to their name; to defer it until a particular time, set `metadata.until` to an ISO timestamp, e.g. `2027-01-15T09:00:00+08:00`.
+An open task shows `⏸` with the name or the future deadline in local time.
+These keys are display conventions: they neither schedule a wake-up nor change the task's `status` or the `todo/v1` contract.
+
 `graph` names the work graph of the plan a task belongs to, one of `single-loop`, `fan-out/fan-in`, and `orchestrator-worker`; any other value is refused.
 One session often runs several plans, so each task carries its own.
 An update replaces it and `graph: null` clears it.

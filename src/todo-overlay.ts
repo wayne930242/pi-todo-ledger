@@ -18,7 +18,8 @@ import { COLLAPSE_KEY_OFF, getMaxWidgetLines, resolveCollapseKey } from "./confi
 import { formatStatusLabel, t } from "./state/i18n-bridge.ts";
 import { selectHasActive, selectOverlayLayout, selectShowTaskIds, selectTodoCounts } from "./state/selectors.ts";
 import { getRenderState } from "./state/store.ts";
-import { formatOverlayTaskLine } from "./view/format.ts";
+import { formatPlanTaskLine } from "./view/format.ts";
+import { planView } from "./view/plan.ts";
 
 const WIDGET_KEY = "rpiv-todos";
 
@@ -140,7 +141,11 @@ export class TodoOverlay {
 		const overlayTasks = this.selectOverlayTasks(snapshot);
 		if (overlayTasks.length === 0) return [];
 
-		const overlayState = { tasks: overlayTasks, nextId: snapshot.nextId };
+		const plan = planView(overlayTasks);
+		// Keep completed rows in their old slots; fill open slots in display order before budgeting.
+		let nextOpen = 0;
+		const tasks = overlayTasks.map(t => t.status === "completed" ? t : plan.ordered[nextOpen++]);
+		const overlayState = { tasks, nextId: snapshot.nextId };
 		const truncate = (line: string): string => truncateToWidth(line, width, "…");
 		const counts = selectTodoCounts(overlayState);
 		const hasActive = selectHasActive(overlayState);
@@ -149,7 +154,8 @@ export class TodoOverlay {
 		const headingColor = hasActive ? "accent" : "dim";
 		const headingIcon = hasActive ? "●" : "○";
 		const headingText = `${t("overlay.heading", OVERLAY_HEADING)} (${counts.completed}/${counts.total})`;
-		const heading = truncate(`${theme.fg(headingColor, headingIcon)} ${theme.fg(headingColor, headingText)}`);
+		const graph = plan.sharedGraph ? ` · ${theme.fg("dim", plan.sharedGraph)}` : "";
+		const heading = truncate(`${theme.fg(headingColor, headingIcon)} ${theme.fg(headingColor, headingText)}${graph}`);
 
 		// Collapsed view: just the heading + a dim "└─" expand hint, then the
 		// trailing spacer. Short-circuit before the budget math and the completed-
@@ -178,7 +184,7 @@ export class TodoOverlay {
 		const bodyBudget = this.uiCtx?.getToolsExpanded?.() === true ? overlayTasks.length : getMaxWidgetLines() - 1;
 		const layout = selectOverlayLayout(overlayState, bodyBudget);
 		for (const task of layout.visible) {
-			lines.push(truncate(`${theme.fg("dim", "├─")} ${formatOverlayTaskLine(task, theme, showIds)}`));
+			lines.push(truncate(`${theme.fg("dim", "├─")} ${formatPlanTaskLine(task, theme, showIds, plan.rows.get(task.id))}`));
 		}
 
 		const newlyDisplayedCompletedTaskIds = overlayTasks

@@ -23,13 +23,13 @@ snapshots are saved.
 
 ## Anatomy of a row
 
-```
-● Todos (2/5)
-├─ ✓ Create DemoTodo domain entity
-├─ ✓ Create IDemoTodoRepository interface
-├─ ◐ Create DemoTodoRepository (creating the repository)
-├─ ○ Register DI bindings
-└─ ○ Add integration tests
+```text
+● Todos (0/5) · fan-out/fan-in
+├─ ◐ #1 Scope @Ari
+├─   ○ #3 API
+├─     ○ #4 Check API
+├─   ○ #5 UI
+└─ ⏸ #2 Approve waits Pat
 ```
 
 - **Heading** — `● Todos (done/total)` in the accent color while any task is
@@ -39,10 +39,11 @@ snapshots are saved.
   Completed and deleted subjects render dim and struck through.
 - **activeForm** — appended dim in parentheses, only while the task is
   `in_progress`.
-- **Dependencies** — appended as `⛓ #1,#2` when the task has a `blockedBy` set.
-- **`#id` prefix** — shown on every row only when at least one visible task
-  carries a `blockedBy`. Without a `⛓ #N` anywhere, the per-row ids have nothing
-  to point at, so they are omitted.
+- **Waiting** — `⏸` replaces the open-task glyph when `metadata.waitsOn` names a party or `metadata.until` is an ISO time in the future. The row shows the party, the local deadline, or both. An elapsed deadline no longer marks a task as waiting.
+- **Owner** — `@owner` follows the subject in muted text.
+- **Dependencies** — open rows nest under the first unfinished `blockedBy` id; siblings are visited in id order. Other unfinished blockers appear in the `⛓ #1,#2` tail. If another prerequisite interrupts a branch, `↳ #N` names the parent the row returns to.
+- **Graph** — the heading names the graph when all open tasks share it; otherwise a root shows its own graph, if set.
+- **`#id` prefix** — shown on every overlay row when at least one visible task carries a `blockedBy`.
 - **Prefixes** — `├─` on each row, `└─` on the last one. A blank spacer line is
   always appended below the panel so it is not flush against the input box.
 
@@ -86,21 +87,16 @@ label rather than advertising an unbindable key.
 
 ## `/todos`
 
-`/todos` prints the whole list grouped by status, independent of the overlay's
-row budget and auto-hiding:
+`/todos` shows the whole dependency tree, independent of the overlay's row budget and auto-hiding.
+Completed tasks follow in their own section.
 
-```
-2/7 completed · 1 in progress · 4 pending
-── Pending ──
-  ○ #4 Register DI bindings
-  ○ #5 Add integration tests    ⛓ #4
-  ○ #6 Wire up the HTTP endpoint
-  ○ #7 Update the API docs
-── In Progress ──
-  ◐ #3 Create DemoTodoRepository (creating the repository)
-── Completed ──
-  ✓ #1 Create DemoTodo domain entity
-  ✓ #2 Create IDemoTodoRepository interface
+```text
+1 in progress · 4 pending · fan-out/fan-in
+  ◐ #1 Scope @Ari
+    ○ #3 API
+      ○ #4 Check API
+    ○ #5 UI
+  ⏸ #2 Approve waits Pat
 ```
 
 The header omits any count that is zero. Sections appear only when they have

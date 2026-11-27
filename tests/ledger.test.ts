@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { compile } from "@earendil-works/pi-schema";
 import { replayFromBranch } from "../src/state/replay.ts";
-import { load, snapshots, text } from "./harness.ts";
+import { load, snapshots, stableText, text } from "./harness.ts";
 
 const schema = JSON.parse(readFileSync(new URL("../schema/todo-v1.schema.json", import.meta.url), "utf8"));
 const snapshotSchema = compile(schema);
@@ -272,7 +272,7 @@ test("a namespace validator's refusal is a tool error and nothing commits", asyn
 
 	const accepted = await h.call({ action: "update", id: 1, status: "completed", metadata: { train: { step: "merged" } } });
 	assert.notEqual(accepted.isError, true);
-	assert.equal(text(accepted), "Updated #1 (pending → completed)");
+	assert.equal(stableText(accepted), "Updated #1 (pending → completed) <uid>");
 });
 
 test("validators see creates, removals, and deletes; unknown namespaces pass", async () => {
@@ -417,8 +417,8 @@ test("guards are awaited, serialize calls per session, and run after namespace v
 		},
 	});
 	const [a, b] = await Promise.all([h.call({ action: "create", subject: "A" }), h.call({ action: "create", subject: "B" })]);
-	assert.equal(text(a), "Created #1: A (pending)");
-	assert.equal(text(b), "Created #2: B (pending)");
+	assert.equal(stableText(a), "Created #1: A (pending) <uid>");
+	assert.equal(stableText(b), "Created #2: B (pending) <uid>");
 	assert.equal(text(await h.call({ action: "create", subject: "refuse me" })), "Error: guard async refused: refused later");
 
 	const calls = guardCalls;
@@ -457,7 +457,7 @@ test("guards see no-op updates, flagged noop, which write nothing", async () => 
 	assert.equal(h.events("todo:changed").length, events, "no change event");
 
 	const changing = await h.call({ action: "update", id: 1, status: "completed" });
-	assert.equal(text(changing), "Updated #1 (in_progress → completed)");
+	assert.equal(stableText(changing), "Updated #1 (in_progress → completed) <uid>");
 	assert.equal("noop" in (seen[1] ?? {}), false, "a real change carries no noop flag");
 
 	h.emit("todo:guard", { v: 1, id: "starts", check: () => "not now" });
@@ -517,7 +517,7 @@ test("a guard calling todo in its own session is refused at once and writes noth
 	assert.ok(Date.now() - started < 1000, "no wait for the guard timeout");
 	assert.equal(inner?.isError, true);
 	assert.equal(text(inner!), "Error: todo called from inside guard reenter");
-	assert.equal(text(outer), "Created #1: Outer (pending)");
+	assert.equal(stableText(outer), "Created #1: Outer (pending) <uid>");
 	assert.deepEqual(
 		snapshots(h.branch).map((s) => s.tasks.map((t) => t.subject)),
 		[["Outer"]],
@@ -534,7 +534,7 @@ test("a guard calling todo in its own session is refused at once and writes noth
 		},
 	});
 	await h.call({ action: "create", subject: "Second" });
-	assert.equal(text(inner!), "Created #1: Elsewhere (pending)");
+	assert.equal(stableText(inner!), "Created #1: Elsewhere (pending) <uid>");
 });
 
 test("a guard chain that comes back to a session on it is refused at once", async () => {
@@ -561,7 +561,7 @@ test("a guard chain that comes back to a session on it is refused at once", asyn
 	const outer = await a.call({ action: "create", subject: "A1" });
 	assert.ok(Date.now() - started < 1000, "no wait for the guard timeout");
 	assert.equal(text(fromB!), "Error: todo called from inside guard guard-a");
-	assert.equal(text(outer), "Created #1: A1 (pending)");
+	assert.equal(stableText(outer), "Created #1: A1 (pending) <uid>");
 	assert.deepEqual(
 		snapshots(a.branch).map((s) => s.tasks.map((t) => t.subject)),
 		[["A1"]],
@@ -610,7 +610,7 @@ test("an aborted call never commits, whether aborted in the queue or during its 
 	const b = h.call({ action: "create", subject: "B" }, queued.signal);
 	queued.abort();
 	release();
-	assert.equal(text(await a), "Created #1: A (pending)");
+	assert.equal(stableText(await a), "Created #1: A (pending) <uid>");
 	const bResult = await b;
 	assert.equal(bResult.isError, true);
 	assert.equal(text(bResult), "Error: call aborted; nothing changed");
@@ -638,7 +638,7 @@ test("evidence appends on update, oldest first, and at defaults to the call time
 	await h.call({ action: "create", subject: "Fix bug", anchor: "npm test -- bug" });
 	const before = Date.now();
 	const first = await h.call({ action: "update", id: 1, evidence: [{ command: "npm test -- bug", result: "fail" }] });
-	assert.equal(text(first), "Updated #1");
+	assert.equal(stableText(first), "Updated #1 <uid>");
 	await h.call({
 		action: "update",
 		id: 1,
@@ -690,9 +690,9 @@ test("invalid ledger fields are rejected before anything changes", async () => {
 	];
 	for (const [params, expected] of cases) assert.equal(text(await h.call(params)), expected);
 	assert.equal(snapshots(h.branch).length, 1);
-	assert.equal(text(await h.call({ action: "update", id: 1, points: 0 })), "Updated #1");
+	assert.equal(stableText(await h.call({ action: "update", id: 1, points: 0 })), "Updated #1 <uid>");
 	assert.match(text(await h.call({ action: "update", id: 1, points: 0 })), /^No change/);
 	// Clock skew up to five minutes is accepted.
 	const soon = new Date(Date.now() + 4 * 60_000).toISOString();
-	assert.equal(text(await h.call({ action: "update", id: 1, evidence: [{ command: "x", result: "pass", at: soon }] })), "Updated #1");
+	assert.equal(stableText(await h.call({ action: "update", id: 1, evidence: [{ command: "x", result: "pass", at: soon }] })), "Updated #1 <uid>");
 });

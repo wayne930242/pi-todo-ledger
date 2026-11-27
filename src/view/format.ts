@@ -5,6 +5,8 @@ import { selectTaskSubjectById } from "../state/selectors.ts";
 import type { TaskState } from "../state/state.ts";
 import { sanitizeTerminalText } from "../tool/sanitize.ts";
 import type { Task, TaskAction, TaskDetails, TaskMutationParams, TaskStatus } from "../tool/types.ts";
+import type { PlanRow } from "./plan.ts";
+import { uidSuffix, waitingLabel } from "./task-labels.ts";
 
 // Re-export so legacy import paths (todo.ts, tests) continue to resolve;
 // the canonical definition lives in the i18n bridge.
@@ -67,37 +69,31 @@ export function overlayStatusGlyph(status: TaskStatus, theme: Theme): string {
 }
 
 /**
- * Format a single task row for the persistent overlay. The subject color
+ * Format a task row for the overlay or /todos. The subject color
  * reflects task state while IDs and supporting metadata stay visually quiet.
  */
-export function formatOverlayTaskLine(t: Task, theme: Theme, showId: boolean): string {
-	const glyph = overlayStatusGlyph(t.status, theme);
+export function formatPlanTaskLine(t: Task, theme: Theme, showId: boolean, row?: PlanRow): string {
+	const wait = waitingLabel(t);
+	const glyph = wait ? theme.fg("warning", "⏸") : overlayStatusGlyph(t.status, theme);
 	const subjectColor =
 		t.status === "in_progress" ? "accent" : t.status === "completed" || t.status === "deleted" ? "muted" : "text";
 	let subject = theme.fg(subjectColor, sanitizeTerminalText(t.subject));
 	if (t.status === "completed" || t.status === "deleted") {
 		subject = theme.strikethrough(subject);
 	}
-	let line = `${glyph}`;
+	let line = `${"  ".repeat(row?.depth ?? 0)}${glyph}`;
 	if (showId) line += ` ${theme.fg("dim", `#${t.id}`)}`;
 	line += ` ${subject}`;
+	if (t.owner) line += ` ${theme.fg("muted", `@${sanitizeTerminalText(t.owner)}`)}`;
+	if (wait) line += ` ${theme.fg("muted", wait)}`;
 	if (t.status === "in_progress" && t.activeForm) {
 		line += ` ${theme.fg("muted", `(${sanitizeTerminalText(t.activeForm)})`)}`;
 	}
-	if (t.blockedBy && t.blockedBy.length > 0) {
-		line += ` ${theme.fg("muted", `⛓ ${t.blockedBy.map((id) => `#${id}`).join(",")}`)}`;
-	}
+	if (row?.graph) line += ` ${theme.fg("dim", row.graph)}`;
+	if (row?.resumeParent !== undefined) line += ` ${theme.fg("dim", `↳ #${row.resumeParent}`)}`;
+	const blockers = row?.otherBlockers ?? t.blockedBy;
+	if (blockers?.length) line += ` ${theme.fg("muted", `⛓ ${blockers.map(id => `#${id}`).join(",")}`)}`;
 	return line;
-}
-
-/**
- * Format a single task line for the `/todos` slash command (no glyph color,
- * indented bullet prefix).
- */
-export function formatCommandTaskLine(t: Task, glyph: string): string {
-	const form = t.status === "in_progress" && t.activeForm ? ` (${sanitizeTerminalText(t.activeForm)})` : "";
-	const block = t.blockedBy?.length ? `    ⛓ ${t.blockedBy.map((id) => `#${id}`).join(",")}` : "";
-	return `  ${glyph} #${t.id} ${sanitizeTerminalText(t.subject)}${form}${block}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -136,16 +132,23 @@ export function renderTodoCall(
 }
 
 /**
- * `renderResult` body. A failed call renders `✗` with its reason; a successful
- * `create`/`update`/`delete` echoes the task's status; anything else is `✓`.
+ * A refusal renders its reason. Task results show only the affected or requested
+ * rows; operations with no rows keep the short success mark.
  */
 export function renderTodoResult(result: ToolResultView, theme: Theme, isError = false): Text {
 	const failure = failureReason(result, isError);
 	if (failure !== undefined) return new Text(theme.fg("error", failure ? `✗ ${failure}` : "✗"), 0, 0);
 
-	const status = echoedStatus(result.details as TaskDetails | undefined);
-	if (status) {
-		return new Text(theme.fg(STATUS_COLOR[status], `${STATUS_GLYPH[status]} ${formatStatusLabel(status)}`), 0, 0);
+	const details = result.details as TaskDetails | undefined;
+	const tasks = echoedTasks(details);
+	if (tasks.length) {
+		const rows = tasks.map(task => {
+			const wait = waitingLabel(task);
+			const label = wait ? `⏸ ${wait}` : `${STATUS_GLYPH[task.status]} ${formatStatusLabel(task.status)}`;
+			const subject = details?.action === "list" || tasks.length > 1 ? ` ${sanitizeTerminalText(task.subject)}` : "";
+			return `${theme.fg(wait ? "warning" : STATUS_COLOR[task.status], label)} #${task.id}${subject}${theme.fg("dim", uidSuffix(task))}`;
+		});
+		return new Text(rows.join("\n"), 0, 0);
 	}
 	return new Text(theme.fg("success", "✓"), 0, 0);
 }
@@ -164,21 +167,16 @@ function failureReason(result: ToolResultView, isError: boolean): string | undef
 	return sanitizeTerminalText(message.split("\n")[0]);
 }
 
-/** Status the result card echoes: the task the call created, updated or deleted. */
-function echoedStatus(details: TaskDetails | undefined): TaskStatus | undefined {
-	if (!details) return undefined;
+/** Use the result's snapshot, not the live slot: a historic card belongs to its own call. */
+function echoedTasks(details?: TaskDetails): Task[] {
+	if (!details?.tasks || !details.params) return [];
 	const params = details.params as TaskMutationParams;
 	switch (details.action) {
-		case "create":
-			return details.tasks.at(-1)?.status;
-		case "update":
-			return params.status ?? details.tasks.find((t) => t.id === params.id)?.status;
-		case "delete":
-			return details.tasks.find((t) => t.id === params.id)?.status;
-		case "list":
+		case "create": return details.tasks.slice(-(params.tasks?.length ?? 1));
 		case "get":
-		case "import":
-		case "clear":
-			return undefined;
+		case "update":
+		case "delete": return details.tasks.filter(t => t.id === params.id);
+		case "list": return details.tasks.filter(t => (params.includeDeleted || t.status !== "deleted") && (!params.status || t.status === params.status));
+		default: return [];
 	}
 }

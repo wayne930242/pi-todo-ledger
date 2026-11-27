@@ -131,6 +131,11 @@ export function text(result: ToolResult): string {
 	return result.content.map((c) => c.text ?? "").join("\n");
 }
 
+/** Keep exact output assertions readable without predicting random task identifiers. */
+export function stableText(result: ToolResult): string {
+	return text(result).replace(/\bt_[a-z2-7]{10}\b/g, "<uid>");
+}
+
 /** `data` of every `todo/v1` entry on the branch. */
 export function snapshots(branch: unknown[]): Array<{ v: number; tasks: Array<Record<string, unknown>>; nextId: number }> {
 	return branch

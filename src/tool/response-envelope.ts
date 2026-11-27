@@ -1,21 +1,18 @@
 import type { TaskState } from "../state/state.ts";
 import type { Op } from "../state/state-reducer.ts";
 import { deriveBlocks } from "../state/task-graph.ts";
+import { isOpen, resultSuffix } from "../view/task-labels.ts";
 import { sanitizeTerminalText } from "./sanitize.ts";
 import type { Task, TaskAction, TaskDetails, TaskMutationParams } from "./types.ts";
 
 /**
- * Format a single task as a `[status] #id subject [(activeForm)] [⛓ #dep,…]`
- * line. Used by the `list` content branch only — the overlay and `/todos`
- * formatting paths use `view/format.ts` for richer presentations.
+ * Compact `list` row for the caller. The widget and /todos use the tree layout instead.
  */
 function formatListLine(t: Task): string {
 	const block = t.blockedBy?.length ? ` ⛓ ${t.blockedBy.map((id) => `#${id}`).join(",")}` : "";
 	const form = t.status === "in_progress" && t.activeForm ? ` (${sanitizeTerminalText(t.activeForm)})` : "";
-	return `[${t.status}] #${t.id} ${sanitizeTerminalText(t.subject)}${form}${block}`;
+	return `[${t.status}] #${t.id} ${sanitizeTerminalText(t.subject)}${form}${block}${resultSuffix(t)}`;
 }
-
-const isOpen = (t: Task): boolean => t.status === "pending" || t.status === "in_progress";
 
 /**
  * `list` body. When an open task names a graph, open tasks are grouped under
@@ -46,13 +43,11 @@ function formatList(view: readonly Task[]): string {
 }
 
 /**
- * Multi-line presentation for the `get` action. Order of rows is pinned by
- * pre-refactor `todo.ts:354-376` — description, activeForm, blockedBy, blocks,
- * owner — so envelope-level snapshot tests stay byte-equivalent.
+ * `get` shows the local id and stable uid on the first line, followed by the set fields.
  */
 function formatGetLines(task: Task, state: TaskState): string {
 	const blocks = deriveBlocks(state.tasks).get(task.id) ?? [];
-	const lines = [`#${task.id} [${task.status}] ${sanitizeTerminalText(task.subject)}`];
+	const lines = [`#${task.id} [${task.status}] ${sanitizeTerminalText(task.subject)}${resultSuffix(task)}`];
 	if (task.description) lines.push(`  description: ${sanitizeTerminalText(task.description)}`);
 	if (task.activeForm) lines.push(`  activeForm: ${sanitizeTerminalText(task.activeForm)}`);
 	if (task.blockedBy?.length) {
@@ -75,8 +70,6 @@ function formatGetLines(task: Task, state: TaskState): string {
 /**
  * Pure formatter: `(op, state) → string`. Closed switch on `op.kind` —
  * adding a new `Op` variant fails to compile here until a branch is added.
- * The strings on each branch are byte-equivalent to pre-refactor `todo.ts`
- * reducer output.
  */
 export function formatContent(op: Op, state: TaskState): string {
 	switch (op.kind) {
@@ -86,16 +79,17 @@ export function formatContent(op: Op, state: TaskState): string {
 				.map((id) => {
 					const created = state.tasks.find((x) => x.id === id);
 					if (!created) return `Created #${id}`;
-					return `Created #${created.id}: ${sanitizeTerminalText(created.subject)} (pending)`;
+					return `Created #${created.id}: ${sanitizeTerminalText(created.subject)} (pending)${resultSuffix(created)}`;
 				})
 				.join("\n");
 		}
 		case "update": {
+			const suffix = resultSuffix(state.tasks.find(t => t.id === op.id)!);
 			if (!op.changed) {
-				return `No change: #${op.id} already matches the requested values (status: ${op.toStatus})`;
+				return `No change: #${op.id} already matches the requested values (status: ${op.toStatus})${suffix}`;
 			}
 			const transition = op.fromStatus !== op.toStatus ? ` (${op.fromStatus} → ${op.toStatus})` : "";
-			return `Updated #${op.id}${transition}`;
+			return `Updated #${op.id}${transition}${suffix}`;
 		}
 		case "delete":
 			return `Deleted #${op.id}: ${sanitizeTerminalText(op.subject)}`;

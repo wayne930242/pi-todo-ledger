@@ -187,6 +187,10 @@ any disk writes.
 
 ## Content strings
 
+The table shows the base messages.
+`create`, `update` (including a no-op), `list`, and `get` append the stable `uid` to each task's summary line when it has one.
+An open task that follows the [waiting convention](../README.md#using-it) also shows `⏸` and its reason on that line.
+
 | Situation | `content[0].text` |
 | --- | --- |
 | Created | `Created #3: Write the parser (pending)` |

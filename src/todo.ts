@@ -36,12 +36,11 @@ import {
 	TOOL_NAME,
 	TodoParamsSchema,
 } from "./tool/types.ts";
-import { formatCommandTaskLine, renderTodoCall, renderTodoResult } from "./view/format.ts";
+import { formatPlanTaskLine, renderTodoCall, renderTodoResult } from "./view/format.ts";
+import { planView } from "./view/plan.ts";
 
 // English fallbacks for localized /todos section headers — the box-drawing
 // decoration is part of the localized string so translators can adjust spacing.
-const SECTION_PENDING = "── Pending ──";
-const SECTION_IN_PROGRESS = "── In Progress ──";
 const SECTION_COMPLETED = "── Completed ──";
 
 // ---------------------------------------------------------------------------
@@ -183,7 +182,7 @@ export function registerTodoTool(pi: ExtensionAPI, namespaces: NamespaceRegistry
 
 export function registerTodosCommand(pi: ExtensionAPI): void {
 	pi.registerCommand(COMMAND_NAME, {
-		description: "Show all todos on the current branch, grouped by status",
+		description: "Show the current branch's plan by dependency, then its completed todos",
 		handler: async (_args, ctx) => {
 			if (!ctx.hasUI) {
 				ctx.ui.notify(t("command.requires_interactive", ERR_REQUIRES_INTERACTIVE), "error");
@@ -195,7 +194,8 @@ export function registerTodosCommand(pi: ExtensionAPI): void {
 				ctx.ui.notify(t("command.no_todos", MSG_NO_TODOS), "info");
 				return;
 			}
-			const groups = selectTasksByStatus(state);
+			const { completed } = selectTasksByStatus(state);
+			const plan = planView(visible);
 			const counts = selectTodoCounts(state);
 
 			const header: string[] = [];
@@ -203,18 +203,12 @@ export function registerTodosCommand(pi: ExtensionAPI): void {
 			if (counts.inProgress > 0) header.push(`${counts.inProgress} ${formatStatusLabel("in_progress")}`);
 			if (counts.pending > 0) header.push(`${counts.pending} ${formatStatusLabel("pending")}`);
 
-			const lines: string[] = [header.join(" · ")];
-			if (groups.pending.length > 0) {
-				lines.push(t("command.section.pending", SECTION_PENDING));
-				for (const task of groups.pending) lines.push(formatCommandTaskLine(task, "○"));
-			}
-			if (groups.inProgress.length > 0) {
-				lines.push(t("command.section.in_progress", SECTION_IN_PROGRESS));
-				for (const task of groups.inProgress) lines.push(formatCommandTaskLine(task, "◐"));
-			}
-			if (groups.completed.length > 0) {
+			if (plan.sharedGraph) header.push(plan.sharedGraph);
+			const lines = [header.join(" · ")];
+			for (const task of plan.ordered) lines.push(`  ${formatPlanTaskLine(task, ctx.ui.theme, true, plan.rows.get(task.id))}`);
+			if (completed.length) {
 				lines.push(t("command.section.completed", SECTION_COMPLETED));
-				for (const task of groups.completed) lines.push(formatCommandTaskLine(task, "✓"));
+				for (const task of completed) lines.push(`  ${formatPlanTaskLine(task, ctx.ui.theme, true)}`);
 			}
 
 			ctx.ui.notify(lines.join("\n"), "info");

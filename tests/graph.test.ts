@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { isSnapshotV1 } from "../src/ledger/schema.ts";
 import { replayFromBranch } from "../src/state/replay.ts";
-import { load, snapshots, text } from "./harness.ts";
+import { load, snapshots, stableText, text } from "./harness.ts";
 
 const NAMES = /single-loop, fan-out\/fan-in, or orchestrator-worker/;
 const last = (h: ReturnType<typeof load>) => snapshots(h.branch).at(-1)!.tasks;
@@ -18,7 +18,7 @@ test("graph is set on create, single and batch, and shown by get", async () => {
 	assert.deepEqual(last(h).map((t) => t.graph), ["single-loop", "fan-out/fan-in", undefined]);
 	assert.ok(isSnapshotV1(snapshots(h.branch).at(-1)));
 	assert.match(text(await h.call({ action: "get", id: 2 })), /^ {2}graph: fan-out\/fan-in$/m);
-	assert.doesNotMatch(text(await h.call({ action: "get", id: 3 })), /graph/);
+	assert.doesNotMatch(text(await h.call({ action: "get", id: 3 })), /^ {2}graph:/m);
 });
 
 test("a graph outside the three names is refused with the names, and nothing commits", async () => {
@@ -47,10 +47,10 @@ test("graph on a batch create belongs to each item, not the top level", async ()
 test("update replaces graph, null clears it, and the same value is no change", async () => {
 	const h = load();
 	await h.call({ action: "create", subject: "Plan", graph: "single-loop" });
-	assert.equal(text(await h.call({ action: "update", id: 1, graph: "orchestrator-worker" })), "Updated #1");
+	assert.equal(stableText(await h.call({ action: "update", id: 1, graph: "orchestrator-worker" })), "Updated #1 <uid>");
 	assert.equal(last(h)[0]!.graph, "orchestrator-worker");
 	assert.match(text(await h.call({ action: "update", id: 1, graph: "orchestrator-worker" })), /^No change/);
-	assert.equal(text(await h.call({ action: "update", id: 1, graph: null })), "Updated #1");
+	assert.equal(stableText(await h.call({ action: "update", id: 1, graph: null })), "Updated #1 <uid>");
 	assert.equal("graph" in last(h)[0]!, false);
 	assert.match(text(await h.call({ action: "update", id: 1, graph: null })), /^No change/);
 	// Clearing also drops a legacy metadata.graph, so a reload does not bring it back.
@@ -64,7 +64,7 @@ test("update replaces graph, null clears it, and the same value is no change", a
 test("list groups open tasks by graph, ungrouped then closed last; without graphs it is unchanged", async () => {
 	const h = load();
 	await h.call({ action: "create", tasks: [{ subject: "A" }, { subject: "B" }] });
-	assert.equal(text(await h.call({ action: "list" })), "[pending] #1 A\n[pending] #2 B");
+	assert.equal(stableText(await h.call({ action: "list" })), "[pending] #1 A <uid>\n[pending] #2 B <uid>");
 	await h.call({
 		action: "create",
 		tasks: [
@@ -77,21 +77,21 @@ test("list groups open tasks by graph, ungrouped then closed last; without graph
 	await h.call({ action: "update", id: 6, status: "in_progress" });
 	await h.call({ action: "update", id: 6, status: "completed" });
 	assert.equal(
-		text(await h.call({ action: "list" })),
+		stableText(await h.call({ action: "list" })),
 		[
 			"fan-out/fan-in:",
-			"[pending] #3 C",
-			"[pending] #5 E",
+			"[pending] #3 C <uid>",
+			"[pending] #5 E <uid>",
 			"single-loop:",
-			"[pending] #4 D",
+			"[pending] #4 D <uid>",
 			"no graph:",
-			"[pending] #1 A",
-			"[pending] #2 B",
+			"[pending] #1 A <uid>",
+			"[pending] #2 B <uid>",
 			"closed:",
-			"[completed] #6 F",
+			"[completed] #6 F <uid>",
 		].join("\n"),
 	);
-	assert.equal(text(await h.call({ action: "list", status: "completed" })), "[completed] #6 F");
+	assert.equal(stableText(await h.call({ action: "list", status: "completed" })), "[completed] #6 F <uid>");
 });
 
 test("old states without graph load unchanged; a valid legacy metadata.graph is read as graph", () => {
