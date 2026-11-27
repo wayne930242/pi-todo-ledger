@@ -152,6 +152,30 @@ Error: metadata.<ns> refused #<id>: <reason>
 `clear`, `list`, and `get` run no validators.
 Namespaces nobody registered pass unchecked.
 
+### Optional Herdr launch identity (`metadata.herdr`)
+
+When `pi-herdr-agents` acknowledges a `subagent` launch with `details.status: "started"` and echoes the call's `item`, the ledger looks up that task in the **calling session**.
+`item` can be a stable task uid or `<session8>#<id>`, where `session8` is the first eight hex digits of the calling session id.
+A numeric reference identifies the task present at dispatch; clearing the list and reusing its number cannot redirect the binding.
+Missing, unknown, foreign-session, or tombstoned items and failed or uncertain launches leave the list unchanged.
+
+A match issues a normal guarded `update`: `owner` becomes the full `details.name`, and `metadata.herdr` records the launch:
+
+```json
+{ "name": "api-worker", "id": "0accb6d1-4380-4d51-a6d7-81dd0408d82f", "pane": "w1:p4" }
+```
+
+`name` is verbatim; `id` is the child **run id** (`details.id`), not the parent's session id or a path-derived id.
+`pane` is the acknowledged `details.worktree.paneId` and is absent for ordinary launches.
+On another successful assignment the new record replaces the old one, so an old pane id does not carry forward.
+Other metadata stays intact; a refusal leaves the launch successful but adds the reason to its response.
+Manual `owner` updates (including `self`) are still allowed; the optional `herdr` record describes the last bound launch, not proof of a live pane or of the current owner's identity.
+
+Use the full name for `/boss send`, quoting names with spaces, or the run id as a stable fallback.
+For names longer than 24 UTF-16 units, Straw Boss displays just the first 23 units plus `…` in the `sb_name` pane token.
+Consumers resolve the live pane from the id or full name at read time, not from that cosmetic label or a saved pane id.
+This namespace needs no new status, schema field, or contract version.
+
 ## 4. Change guards
 
 A namespace validator judges one task's value.

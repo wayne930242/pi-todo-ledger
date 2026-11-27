@@ -33,7 +33,9 @@ import {
 	READY_EVENT,
 	toChangedEvent,
 } from "./ledger/contract.ts";
+import { makeFinishCall } from "./ledger/finish-call.ts";
 import { GuardRegistry } from "./ledger/guards.ts";
+import { registerHerdrOwner } from "./ledger/herdr-owner.ts";
 import { NamespaceRegistry } from "./ledger/namespaces.ts";
 import { I18N_NAMESPACE } from "./state/i18n-bridge.ts";
 import { replayFromBranch } from "./state/replay.ts";
@@ -186,7 +188,9 @@ export default function (
 		if (ignored) console.warn(`[pi-todo-ledger] ignored ${ignored}`);
 	});
 
-	registerTodoTool(pi, namespaces, guards);
+	const finish = makeFinishCall(pi, namespaces, guards);
+	registerTodoTool(pi, finish);
+	registerHerdrOwner(pi, finish);
 	registerTodosCommand(pi);
 	pi.events.emit(READY_EVENT, { v: CONTRACT_VERSION });
 
@@ -308,7 +312,7 @@ export default function (
 	// Reads getTodos() at render time; do NOT call replayFromBranch here
 	// (branch is stale — message_end runs after tool_execution_end).
 	pi.on("tool_execution_end", async (event) => {
-		if (event.toolName !== TOOL_NAME || event.isError) return;
+		if ((event.toolName !== TOOL_NAME && event.toolName !== "subagent") || event.isError) return;
 		try {
 			await updateTodoOverlay();
 		} catch (e) {

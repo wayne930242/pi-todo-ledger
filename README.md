@@ -43,7 +43,10 @@ The new fields are optional parameters of `create` (and of each `tasks[]` item) 
 `get` shows all three fields.
 
 `create`, `update`, `get`, and `list` print each task's stable `uid` if it has one (for example, `t_k7wrx2jzfq`).
-Pass that value as a subagent's `item`; use the shorter `#id` only within the list.
+Pass that value as a Herdr `subagent`'s `item` (or use `<session8>#<id>` from the same session).
+Once the launch is acknowledged, the ledger sets `owner` to the child's full name and records its run id in [`metadata.herdr`](CONTRACT.md#optional-herdr-launch-identity-metadataherdr).
+Use `/boss send api-worker <message>` to reach a named worker; quote a name that contains spaces.
+You can still set `owner` by hand.
 
 The panel and `/todos` indent each open task under its first unfinished blocker and show its owner as `@owner`.
 To mark a task as waiting for someone, set `metadata.waitsOn` to their name; to defer it until a particular time, set `metadata.until` to an ISO timestamp, e.g. `2027-01-15T09:00:00+08:00`.

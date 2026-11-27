@@ -19,7 +19,7 @@ export interface Harness {
 	/** Call the `todo` tool the way pi does after argument validation. */
 	call(params: Record<string, unknown>, signal?: AbortSignal): Promise<ToolResult>;
 	/** Fire a pi lifecycle event at the extension. */
-	fire(event: string): Promise<void>;
+	fire(event: string, fields?: Record<string, unknown>): Promise<unknown>;
 	/** Emit on the shared event bus, as another extension would. */
 	emit(channel: string, data: unknown): void;
 	/** Events emitted on one channel. */
@@ -36,6 +36,7 @@ let sessionCounter = 0;
 export function load(
 	options: {
 		branch?: unknown[];
+		sessionId?: string;
 		cwd?: string;
 		before?: (h: Harness) => void;
 		/** Throw from `appendEntry` while this returns true. */
@@ -46,7 +47,7 @@ export function load(
 	const bus = new EventEmitter();
 	const handlers = new Map<string, Array<(event: unknown, ctx: ExtensionContext) => unknown>>();
 	let tool: ToolDefinition | undefined;
-	const sessionId = `test-session-${++sessionCounter}`;
+	const sessionId = options.sessionId ?? `test-session-${++sessionCounter}`;
 	const branch = options.branch ?? [];
 	const emitted: Harness["emitted"] = [];
 
@@ -105,8 +106,10 @@ export function load(
 			});
 			return result;
 		},
-		async fire(event) {
-			for (const handler of handlers.get(event) ?? []) await handler({ type: event }, ctx);
+		async fire(event, fields) {
+			let result: unknown;
+			for (const handler of handlers.get(event) ?? []) result = await handler({ type: event, ...fields }, ctx);
+			return result;
 		},
 		emit(channel, data) {
 			pi.events.emit(channel, data);
