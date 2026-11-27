@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0
+
+- A successful Herdr `subagent` launch with a todo `item` sets the task's owner to the full child name and records the run id in `metadata.herdr.id`. Worktree launches that return a pane id also set `metadata.herdr.pane`. Namespace validators and guards can refuse the assignment without undoing the launch.
+- Use a stable uid or `<session8>#<id>` from the calling session. A pending assignment to a legacy task without a uid survives ordinary updates but not a list clear or branch replay. The `todo/v1` schema stays unchanged.
+
 ## 0.5.0
 
 - `get`, `list`, `create`, and `update` print the task's stable `uid` for use as a subagent `item`. Tasks restored without a `uid` keep their numeric id only.
