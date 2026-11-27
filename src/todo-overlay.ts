@@ -81,6 +81,7 @@ interface DrawContext {
 	live: ReturnType<typeof liveRows>;
 	/** Live runs of this session bound to no task on the panel, in the host's order. */
 	others: RunRow[];
+	runOwners: Map<string, number>;
 	showIds: boolean;
 	now: number;
 	evidence: "inline" | "screen" | undefined;
@@ -403,6 +404,7 @@ export class TodoOverlay {
 			bound,
 			live,
 			others,
+			runOwners: new Map([...bound].flatMap(([id, h]) => h.runs.map(r => [r.id, id] as const))),
 			showIds,
 			now: Date.now(),
 			evidence: this.evidence(),
@@ -461,6 +463,7 @@ export class TodoOverlay {
 		const layout = selectOverlayLayout(overlayState, bodyBudget);
 		const overflow = layout.hiddenCompleted + layout.truncatedTail;
 		const hint = this.keyHint();
+		draw.others = this.groupCandidates(layout.visible, draw);
 		const others = draw.others.length;
 		// With nothing to summarize, the hint takes its own row only when one is spare.
 		const needed =
@@ -534,23 +537,28 @@ export class TodoOverlay {
 		const completed = overlayTasks.filter((t) => t.status === "completed");
 		const next = pending.slice(0, inProgress.length ? 2 : 3);
 		const total = inProgress.length + pending.length + completed.length;
-		const others = draw.others.length;
 
 		// Task rows first, in priority order; runs take the spare rows in display order;
 		// the group and then completed rows get what is left. The summary row is reserved only when needed.
 		const fit = (slots: number) => {
 			const core = [...inProgress, ...next].slice(0, slots);
 			let spare = slots - core.length - this.boundRows(core, slots - core.length, draw);
-			const group = groupFit(spare, others);
+			const candidates = this.groupCandidates([...core, ...completed], draw);
+			const initialGroup = groupFit(spare, candidates.length);
+			const possibleDone = completed.slice(0, spare - (initialGroup ? 1 + initialGroup : 0));
+			const workers = this.groupCandidates([...core, ...possibleDone], draw);
+			const group = groupFit(spare, workers.length);
 			spare -= group ? 1 + group : 0;
 			const done = completed.slice(0, spare);
 			const rows = core.length + done.length + (group ? 1 + group : 0);
-			return { core, done, group, spare: slots - rows, left: spare - done.length };
+			return { core, done, group, workers: this.groupCandidates([...core, ...done], draw), spare: slots - rows, left: spare - done.length };
 		};
 		let shown = fit(bodyBudget);
 		const summarized =
-			shown.core.length + shown.done.length < total || shown.group < others;
+			shown.core.length + shown.done.length < total || shown.group < shown.workers.length;
 		if (summarized) shown = fit(bodyBudget - 1);
+		draw.others = shown.workers;
+		const others = shown.workers.length;
 		// With nothing to summarize, the hint takes its own row only when one is spare;
 		// one row less leaves the same layout then.
 		const hint = this.keyHint();
@@ -596,6 +604,11 @@ export class TodoOverlay {
 		const summary = `+${parts.join(t("overlay.separator", OVERLAY_SEPARATOR))}`;
 		lines.push(this.closingRow(draw, summary, hint));
 		return lines;
+	}
+
+	private groupCandidates(visible: readonly Task[], draw: DrawContext): RunRow[] {
+		const ids = new Set(visible.map(task => task.id));
+		return [...(draw.live?.values() ?? [])].filter(run => !ids.has(draw.runOwners.get(run.id) ?? -1));
 	}
 
 	/** Live run rows bound to a task (empty when the host gave no rows). */
@@ -653,7 +666,7 @@ export class TodoOverlay {
 			truncate(`${theme.fg("dim", closed ? "└─" : "├─")} ${theme.fg("muted", t("overlay.others", OVERLAY_OTHERS))}`),
 		];
 		for (const [j, r] of runs.entries())
-			this.drawRun(lines, r, `${closed ? " " : "│"}    ${j === runs.length - 1 ? "└" : "├"} `, draw, frame);
+			this.drawRun(lines, r, `${closed ? " " : "│"}    ${j === runs.length - 1 ? "└" : "├"} ${draw.runOwners.has(r.id) ? `#${draw.runOwners.get(r.id)} ` : ''}`, draw, frame);
 		return lines;
 	}
 

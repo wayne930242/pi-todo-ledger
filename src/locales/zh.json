@@ -1,4 +1,5 @@
 {
+  "conflict.warning": "检测到待办扩展冲突：{rivals}。当前 todo 工具由 {active} 提供。",
   "_meta.notes": "中文翻译。欢迎中文母语者通过 PR 审校。",
 
   "status.pending": "待处理",

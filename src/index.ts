@@ -23,6 +23,7 @@
 
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
+import { conflictWarning } from './conflicts.ts';
 import { COLLAPSE_KEY_OFF, resolveCollapseKey } from "./config.ts";
 import {
 	CHANGED_EVENT,
@@ -255,6 +256,7 @@ export default function (
 		if (isForeground) await updateTodoOverlay(true);
 	};
 
+	const warned = new Set<string>();
 	pi.on("session_start", async (_event, ctx) => {
 		let id: string;
 		try {
@@ -267,6 +269,14 @@ export default function (
 			// swallow the known stale error and bail; let real replay bugs propagate.
 			if (!isStaleCtxError(e)) throw e;
 			return;
+		}
+		if (!warned.has(id)) {
+			const message = conflictWarning(pi, ctx);
+			if (message) {
+				warned.add(id);
+				if (ctx.hasUI) ctx.ui.notify(message, 'warning');
+				else console.error(message.replace(/[\r\n]+/g, ' '));
+			}
 		}
 		if (!ctx.hasUI) return;
 		// First UI-bearing session_start claims the foreground (the interactive

@@ -1,4 +1,5 @@
 {
+  "conflict.warning": "Todo-Konflikt: {rivals}. Aktives todo-Werkzeug: {active}.",
   "_meta.notes": "Auto-translated draft. Native-speaker review welcome via PR. Unicode box-drawing characters (──) stay untranslated. Note: 'overlay.more' renders as '+5 weitere' which is grammatically loose for plural agreement — accepted for badge brevity.",
 
   "status.pending": "ausstehend",

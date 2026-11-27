@@ -1,4 +1,5 @@
 {
+  "conflict.warning": "Todo conflict: {rivals}. Active todo tool: {active}.",
   "status.pending": "pending",
   "status.in_progress": "in progress",
   "status.completed": "completed",

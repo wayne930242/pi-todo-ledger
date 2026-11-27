@@ -37,6 +37,8 @@ let sessionCounter = 0;
  */
 export function load(
 	options: {
+		commands?: unknown[];
+		tools?: unknown[];
 		branch?: unknown[];
 		sessionId?: string;
 		cwd?: string;
@@ -68,6 +70,8 @@ export function load(
 			tool = definition;
 		},
 		registerCommand: () => {},
+		getCommands: () => options.commands ?? [],
+		getAllTools: () => options.tools ?? [],
 		registerShortcut: (key: string) => {
 			shortcuts.push(key);
 		},

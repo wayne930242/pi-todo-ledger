@@ -1,4 +1,5 @@
 {
+  "conflict.warning": "偵測到待辦套件衝突：{rivals}。目前的 todo 工具由 {active} 提供。",
 	"status.pending": "待處理",
 	"status.in_progress": "進行中",
 	"status.completed": "已完成",

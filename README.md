@@ -14,7 +14,7 @@ On top of them it publishes a bookkeeping contract, [CONTRACT.md](CONTRACT.md):
 
 ## Replaces rpiv-todo
 
-This package registers the tool name `todo`, as rpiv-todo does, so install one or the other.
+Install this package or its predecessor, `@juicesharp/rpiv-todo`, not both. At startup the ledger warns if another extension owns the `todo` tool or registers `/todo` or `/todos`. It also checks personal and project package settings and installation paths for rpiv-todo. The warning names the active tool provider and gives the removal command for a matching package declaration. For an extension loaded with `-e`, omit it on the next launch. Pi does not expose losing tool registrations: a later, unknown extension that only registers `todo` cannot be detected.
 With both installed, the two `todo` tools clash.
 
 Switching keeps your lists.

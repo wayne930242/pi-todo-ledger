@@ -99,6 +99,12 @@ test("unbound runs form an Other workers group after the task rows, in zh-TW", a
 	m.overlay.dispose();
 });
 
+test('a worker of a folded todo is drawn with its todo id and claimed', async ctx => {
+ env(ctx);
+ const m = await mount([task(1),task(2),task(3),task(4,'pending',bound('worker-four'))],()=>[run('worker-four')]);
+ try { assert.match(m.render().join('\n'),/#4 worker-four/); m.render(); assert.deepEqual(m.claims.at(-1),['worker-four']); } finally { m.overlay.dispose(); }
+});
+
 test("the group in English", async (ctx) => {
 	env(ctx);
 	const m = await mount(EXAMPLE(), EXAMPLE_ROWS);

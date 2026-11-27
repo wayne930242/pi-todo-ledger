@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.3
+
+- Warn at startup if rpiv-todo is still installed or another extension provides a competing todo tool or command. The warning identifies the active tool and how to remove a configured package.
+- Show runs bound to hidden tasks in Other workers with their task numbers, instead of leaving them in the host panel when there is room.
+
 ## 0.7.2
 
 - Runs of this session that belong to no todo, such as a scout sent out on the side, now show on the panel as an `Other workers` group (`其他 worker` in zh-TW) after the tasks, in the same row format as bound runs. It is not a warning. With no todos, the panel shows its heading and the group.

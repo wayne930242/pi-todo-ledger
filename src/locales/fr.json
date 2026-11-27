@@ -1,4 +1,5 @@
 {
+  "conflict.warning": "Conflit de tâches : {rivals}. Outil todo actif : {active}.",
   "_meta.notes": "Auto-translated draft. Native-speaker review welcome via PR. Unicode box-drawing characters (──) stay untranslated.",
 
   "status.pending": "en attente",

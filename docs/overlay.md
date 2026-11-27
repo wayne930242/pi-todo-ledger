@@ -103,7 +103,7 @@ Collapsing the panel, or the run leaving the panel, returns the run to the Subag
 ## Other workers
 
 An agent often sends out a run that belongs to no todo item: a quick scout, a reviewer, a one-off check.
-The panel lists this session's runs that no task on the panel is bound to as one group, after the task rows and before the summary row:
+The group follows the task rows. It includes unbound runs and runs whose task is folded away or cut by the row budget. A run from a hidden task carries its task number (`#4 worker-four`). A fully drawn run is claimed here; if there is no room, the summary counts it and the host can still show it.
 
 ```text
 ● Todos (0/3)
