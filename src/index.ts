@@ -169,7 +169,7 @@ export default function (
 		const { TodoOverlay } = await loadTodoOverlay();
 		if (generation !== lifecycleGeneration || !uiCtx) return;
 
-		todoOverlay ??= new TodoOverlay();
+		todoOverlay ??= new TodoOverlay(p => pi.events.emit('pi-herdr-agents:run-rows:v1', p));
 		todoOverlay.setUICtx(uiCtx);
 		if (resetCompletedDisplayState) todoOverlay.resetCompletedDisplayState();
 		todoOverlay.update();

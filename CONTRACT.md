@@ -167,7 +167,11 @@ A match issues a normal guarded `update`: `owner` becomes the full `details.name
 
 `name` is verbatim; `id` is the child **run id** (`details.id`), not the parent's session id or a path-derived id.
 `pane` is the acknowledged `details.worktree.paneId` and is absent for ordinary launches.
-On another successful assignment the new record replaces the old one, so an old pane id does not carry forward.
+The top-level fields always describe the latest assignment. An old pane id does not carry forward. For example, after a reviewer joins a worker on the same task, `owner` and `metadata.herdr.id` identify the reviewer.
+
+New writers also store `metadata.herdr.runs`: up to six `{ name, id, pane?, session?, agent? }` records, unique by run id, newest last. `session` is the launch acknowledgement's `sessionFile`. Once the list exceeds six, `metadata.herdr.older` counts the discarded records. An earlier v1 record without `runs` counts as one binding. The snapshot version remains 1.
+
+A successful `subagent_resume` appends its new run id when its acknowledged `sessionPath` matches a retained session path on exactly one non-deleted task in the calling session. An unknown or ambiguous path binds nothing.
 Other metadata stays intact; a refusal leaves the launch successful but adds the reason to its response.
 Manual `owner` updates (including `self`) are still allowed; the optional `herdr` record describes the last bound launch, not proof of a live pane or of the current owner's identity.
 

@@ -22,7 +22,7 @@ for (const mode of ["uid", "session#id"] as const) {
 		await ack(h, item, extra);
 		const herdr = { name, id, ...(mode === "uid" ? { pane: "w1:p4" } : {}) };
 		assert.equal(last(h).owner, name);
-		assert.deepEqual(last(h).metadata, { train: 2, herdr });
+		assert.deepEqual(last(h).metadata, { train: 2, herdr: { ...herdr, runs: [herdr] } });
 		assert.deepEqual((h.events("todo:changed").at(-1) as { tasks: unknown[] }).tasks[0], last(h));
 		const replay = load({ branch: [...h.branch] });
 		await replay.fire("session_start");
@@ -57,11 +57,24 @@ test("a legacy uid-less task binds by local id; reassignment without a pane drop
 	await h.fire("session_start");
 	const item = "0123abcd#3";
 	await start(h, item); await ack(h, item, { worktree: { paneId: "w1:p3" } });
-	assert.deepEqual(last(h).metadata, { herdr: { name, id, pane: "w1:p3" } });
+	assert.deepEqual(last(h).metadata, { herdr: { name, id, pane: "w1:p3", runs: [{ name, id, pane: "w1:p3" }] } });
 	await start(h, item); await ack(h, item, { name: "Second", id: "another-child" });
-	assert.deepEqual(last(h).metadata, { herdr: { name: "Second", id: "another-child" } });
+	assert.deepEqual(last(h).metadata, { herdr: { name: "Second", id: "another-child", runs: [{ name, id, pane: "w1:p3" }, { name: "Second", id: "another-child" }] } });
 	assert.equal(last(h).owner, "Second");
 	assert.equal(last(h).uid, undefined);
+});
+
+test("resume follows session path; history keeps six unique runs", async () => {
+	const h = load();
+	await h.call({ action: "create", subject: "Pair" });
+	const item = last(h).uid;
+	await ack(h, item, { sessionFile: "/worker" });
+	await ack(h, item, { id: "review", name: "Reviewer" });
+	for (let i = 0; i < 5; i++) await h.fire("tool_result", { toolName: "subagent_resume", toolCallId: `resume${i}`, input: { sessionPath: "/worker" }, details: { ...base, id: `r${i}`, sessionPath: "/worker" }, content: [] });
+	const history = (last(h).metadata as { herdr: { runs: { id: string; session?: string }[]; older: number } }).herdr;
+	assert.deepEqual(history.runs.map(r => r.id), ["review", "r0", "r1", "r2", "r3", "r4"]);
+	assert.equal(history.runs.at(-1)?.session, "/worker");
+	assert.equal(history.older, 1);
 });
 
 for (const intervening of ["update", "clear", "session_tree"] as const) {
@@ -86,7 +99,7 @@ for (const intervening of ["update", "clear", "session_tree"] as const) {
 			assert.equal(last(h).owner, name);
 			assert.equal(last(h).subject, "Renamed");
 			assert.equal(last(h).uid, undefined);
-			assert.deepEqual(last(h).metadata, { note: 1, herdr: { name, id } });
+			assert.deepEqual(last(h).metadata, { note: 1, herdr: { name, id, runs: [{ name, id }] } });
 		} else {
 			assert.equal(last(h).owner, undefined);
 			assert.equal(snapshots(h.branch).length, before);

@@ -1,3 +1,4 @@
+import { t } from '../state/i18n-bridge.ts';
 import { sanitizeTerminalText } from "../tool/sanitize.ts";
 import type { Task } from "../tool/types.ts";
 
@@ -20,7 +21,7 @@ export function waitingLabel(task: Task): string {
 	const party = typeof who === "string" ? sanitizeTerminalText(who).trim() : "";
 	const until = task.metadata?.until;
 	const time = typeof until === "string" && isoDateTime.test(until) ? Date.parse(until) : NaN;
-	return [party && `waits ${party}`, time > Date.now() && `until ${localTime.format(time)}`].filter(Boolean).join(" · ");
+	return [party && `${t('wait.party','waits')} ${party}`, time > Date.now() && `${t('wait.until','until')} ${localTime.format(time)}`].filter(Boolean).join(" · ");
 }
 
 export function resultSuffix(task: Task): string {

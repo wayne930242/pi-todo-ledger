@@ -19,6 +19,7 @@
  * `const X = formatStatusLabel(...)`.
  */
 
+import { readFileSync } from 'node:fs';
 import type { TaskStatus } from "../tool/types.ts";
 
 export const I18N_NAMESPACE = "pi-todo-ledger";
@@ -27,7 +28,7 @@ export const I18N_NAMESPACE = "pi-todo-ledger";
 const I18N_SDK: string = "@juicesharp/rpiv-i18n";
 
 type ScopeFn = (key: string, fallback: string) => string;
-type I18nSDK = { scope: (namespace: string) => ScopeFn };
+type I18nSDK = { getActiveLocale?: () => string | undefined; scope: (namespace: string) => ScopeFn };
 
 // Prefer the live SDK if installed: closures it returns track the active
 // locale, so /languages picker propagates to our render call sites. If the
@@ -38,15 +39,24 @@ type I18nSDK = { scope: (namespace: string) => ScopeFn };
 // Top-level await is required so a synchronous `t(...)` call from any
 // downstream module sees the resolved scope; ESM module loading awaits this
 // before evaluating any importer.
+const traditional: Record<string,string> = JSON.parse(readFileSync(new URL('../locales/zh-TW.json', import.meta.url), 'utf8'));
+let active: I18nSDK['getActiveLocale'];
 let scopeImpl: ScopeFn;
 try {
 	const sdk = (await import(I18N_SDK)) as I18nSDK;
+	active = sdk.getActiveLocale;
 	scopeImpl = sdk.scope(I18N_NAMESPACE);
 } catch {
 	scopeImpl = (_key, fallback) => fallback;
 }
 
-export const t: ScopeFn = scopeImpl;
+export const t: ScopeFn = (key, fallback) => {
+	const env = process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || '';
+	const locale = active?.();
+	const candidate = !locale || locale === 'zh' && /^zh/i.test(env) ? env : locale;
+	if (/^zh[-_](?:TW|Hant)(?:[-_.@]|$)/i.test(candidate)) return (traditional as Record<string,string>)[key] ?? fallback;
+	return scopeImpl(key, fallback);
+};
 
 const STATUS_LABEL_PENDING = "pending";
 const STATUS_LABEL_IN_PROGRESS = "in progress";

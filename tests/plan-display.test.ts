@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from "node:test";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -10,7 +13,7 @@ import { load, snapshots, text, type Harness, type ToolResult } from "./harness.
 const theme = { fg: (_color: string, s: string) => s, strikethrough: (s: string) => s } as Theme;
 const card = (r: ToolResult) => renderTodoResult(r, theme).render(180).join("\n");
 
-async function surfaces(h: Harness, width = 120) {
+async function surfaces(h: Harness, width = 120, overlay = new TodoOverlay(), expanded = true) {
 	let render!: (width: number) => string[];
 	let command!: (args: string, ctx: ExtensionCommandContext) => Promise<void>;
 	let notification = "";
@@ -21,22 +24,48 @@ async function surfaces(h: Harness, width = 120) {
 		setWidget: (_key: string, factory?: (tui: object, t: Theme) => { render: typeof render }) => {
 			if (factory) render = factory({ requestRender() {} }, theme).render;
 		},
-		getToolsExpanded: () => true,
+		getToolsExpanded: () => expanded,
 	} as unknown as ExtensionUIContext;
 	registerTodosCommand({ registerCommand: (_: string, c: { handler: typeof command }) => { command = c.handler; } } as unknown as ExtensionAPI);
 	await command("", { ...h.ctx, hasUI: true, ui } as ExtensionCommandContext);
 	const commandMuted = [...muted];
 	muted.length = 0;
 	setActiveRenderSession(h.sessionId);
-	const overlay = new TodoOverlay();
+
 	overlay.setUICtx(ui);
 	overlay.update();
 	const rows = render(width);
+	render(width);
 	overlay.toggleCollapse();
 	const collapsed = render(width);
 	overlay.dispose();
 	return { rows, collapsed, notification, commandMuted, overlayMuted: muted };
 }
+
+test("live projection draws only bound runs, then releases the claim on collapse", async (ctx) => {
+	ctx.mock.timers.enable({apis:['Date'],now:1_000_000});
+	const old = process.env.LC_ALL;
+	process.env.LC_ALL = 'zh_Hant_TW.UTF-8';
+	ctx.after(()=>{if(old===undefined) delete process.env.LC_ALL; else process.env.LC_ALL=old;});
+	const rows = [ ["todograph-build", "gpt-6.2-astra", "active", 240], ["todograph-ui", "claude-opus-4-5", "waiting", 42], ["todograph-review", "gpt-6.2-sol", "active", 60] ] as const;
+	const claims: string[][] = [];
+	const overlay = new TodoOverlay(p => { if (p.claim) claims.push(p.claim.ids); p.rows = { version: 1, rows: rows.map(([name,model,kind,time],i) => ({ id:name,name,model,agent:i===2?"reviewer":"worker",phase:{kind,label:i===1?"thread_wait":undefined},startedAt:Date.now()-time*1000 })) }; });
+	const tasks = ["sb 插單規則", "ledger 0.6.0", "sb 計畫圖", "maestro 研究"].map((subject,i) => ({id:61+i,subject,graph:"fan-out/fan-in",status:["completed","in_progress","in_progress","pending"][i],metadata:i===3?{waitsOn:"boss"}:{herdr:{runs:(i===1?rows.slice(0,1):i===2?rows.slice(1):[]).map(([name])=>({id:name,name}))}}}));
+	const h = load({branch:[{type:"custom",customType:"todo/v1",data:{v:1,tasks,nextId:65}}]});
+	await h.fire("session_start");
+	const view = await surfaces(h,120,overlay);
+	assert.deepEqual(view.rows,["● Todos (1/4) · fan-out", "├─ ✓ #61 sb 插單規則", "├─ ◐ #62 ledger 0.6.0", "│    └ todograph-build · astra · 執行中 4m", "├─ ◐ #63 sb 計畫圖", "│    ├ todograph-ui · opus · 等 thread 42s", "│    └ todograph-review · sol · 審查中 1m", "└─ ⏸ #64 maestro 研究 等 boss", ""]);
+	assert.deepEqual(claims.slice(0,3),[[],rows.map(([name])=>name),[]]);
+	const dir = mkdtempSync(join(tmpdir(),'todo-budget-'));
+	const xdg = process.env.XDG_CONFIG_HOME;
+	ctx.after(()=>{if(xdg===undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME=xdg; rmSync(dir,{recursive:true,force:true});});
+	mkdirSync(join(dir,'pi-todo-ledger')); writeFileSync(join(dir,'pi-todo-ledger','config.json'),JSON.stringify({maxWidgetLines:5}));
+	process.env.XDG_CONFIG_HOME=dir;
+	claims.length=0;
+	const limited = await surfaces(h,120,overlay,false);
+	assert.ok(limited.rows.includes('├─ ◐ #63 sb 計畫圖 · 2 個工作階段'));
+	assert.ok(claims.every(ids=>!ids.length));
+});
 
 test("each get/list/create/update task exposes its stable uid to the caller and in the result card", async () => {
 	const h = load();
