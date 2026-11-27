@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.1
+
+- The panel key (`collapseKey`, default `ctrl+shift+t`) now cycles focus view → full view → collapsed → focus view, starting from the configured `view`. The chosen state lasts for the session.
+- A dim hint names the key and the next state at the end of the summary row, such as `+5 pending · ctrl+shift+t full` (`+5 待處理 · ctrl+shift+t 完整` in zh-TW). With nothing to summarize it takes a closing row when one is spare. It is cut first on a narrow row, and `"off"` shows none.
+
 ## 0.7.0
 
 - The panel shows each live Herdr run beneath its todo. It claims only the run rows it displays, so the Subagents widget can still show runs the panel leaves out.
