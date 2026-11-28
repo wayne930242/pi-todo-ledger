@@ -253,7 +253,7 @@ export class TodoOverlay {
 		const visible = this.selectOverlayTasks(snapshot);
 
 		// With no task to show, the panel stays for this session's runs (the Other workers group), cars and asks.
-		if (visible.length === 0 && !liveRows(this.query)?.size && !carRows(this.sb).length && !askRows(this.sb).rows.length) {
+		if (visible.length === 0 && !liveRows(this.query)?.size && !carRows(this.sb).rows.length && !askRows(this.sb).rows.length) {
 			this.finishFrame([]);
 			if (this.widgetRegistered) {
 				this.uiCtx.setWidget(WIDGET_KEY, undefined);
@@ -389,7 +389,7 @@ export class TodoOverlay {
 		const live = liveRows(this.query);
 		const cars = carRows(this.sb);
 		const asks = askRows(this.sb);
-		if (overlayTasks.length === 0 && !live?.size && !cars.length && !asks.rows.length) {
+		if (overlayTasks.length === 0 && !live?.size && !cars.rows.length && !asks.rows.length) {
 			this.finishFrame([]);
 			return [];
 		}
@@ -430,7 +430,7 @@ export class TodoOverlay {
 			truncate,
 			bound,
 			live,
-			cars,
+			cars: cars.rows,
 			asks,
 			others,
 			groups: [],

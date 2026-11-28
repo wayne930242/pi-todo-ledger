@@ -40,6 +40,11 @@ export interface AskRow {
 	 */
 	item?: { session: string; id: number; uid?: string };
 }
+export interface CarRows {
+	/** This session's id: an item `<session8>#<id>` must start with its first eight characters. An older sb leaves it out. */
+	session?: string;
+	rows: CarRow[];
+}
 export interface AskRows {
 	/** This session's id as `item.session` names it; an older sb leaves it out, and then no ask is put under a todo. */
 	session?: string;
@@ -64,13 +69,14 @@ const TONES = new Set<string>(["ok", "wait", "warn", "bad"]);
 const str = (v: unknown): v is string => typeof v === "string";
 
 /** The car rows of this session, a row the contract does not allow left out; none without sb. */
-export function carRows(query?: SbQuery): CarRow[] {
-	const rows = (probe(query, CAR_ROWS_EVENT)?.rows ?? []) as unknown[];
-	return rows.filter((r): r is CarRow => {
+export function carRows(query?: SbQuery): CarRows {
+	const answer = probe(query, CAR_ROWS_EVENT);
+	const rows = ((answer?.rows ?? []) as unknown[]).filter((r): r is CarRow => {
 		const c = r as Partial<CarRow> | null;
 		return !!c && str(c.id) && str(c.line) && str(c.phase) && Number.isFinite(c.since) &&
 			(c.item === undefined || str(c.item)) && (c.group === undefined || str(c.group)) && (c.wait === undefined || str(c.wait));
 	}).map((c) => ({ ...c, tone: TONES.has(c.tone) ? c.tone : "ok", tickets: Array.isArray(c.tickets) ? c.tickets.filter(str) : [] }));
+	return { ...(str(answer?.session) && answer.session ? { session: answer.session } : {}), rows };
 }
 
 /** The open asks of this session and its subagents (`mine`); another session's are on `/boss asks` and sb's GUI, not here. */
@@ -92,12 +98,14 @@ export function askNames(ask: AskRow, task: { id: number; uid?: string }, sessio
 	return !!session && !!item && item.session === session && item.id === task.id && typeof item.uid === "string" && item.uid === task.uid;
 }
 
-/** Whether a car row's `item` names this todo: its uid, or `<session8>#<id>` (sb places cars only by this session's todos). */
-export function carNames(car: CarRow, task: { id: number; uid?: string }): boolean {
+/**
+ * Whether a car row's `item` names this todo: its uid, or `<session8>#<id>` with this session's own eight characters
+ * (carrows-review-F003). With no session from sb, only a uid places a car.
+ */
+export function carNames(car: CarRow, task: { id: number; uid?: string }, session: string | undefined): boolean {
 	if (!car.item) return false;
 	if (task.uid && car.item === task.uid) return true;
-	const hash = car.item.lastIndexOf("#");
-	return hash >= 0 && car.item.slice(hash + 1) === String(task.id);
+	return !!session && car.item === `${session.slice(0, 8)}#${task.id}`;
 }
 
 /** `42s`, `12m`, `1h05m`, as the run rows have it. */
@@ -130,7 +138,7 @@ export function askLine(ask: AskRow, now: number, fg: Fg = plain, grouped = fals
 
 /** What changed for the panel, to redraw it when sb's rows do (sb refreshes them every 15 s, between turns too). */
 export function sbSignature(query?: SbQuery): string {
-	const cars = carRows(query).map((c) => [c.id, c.item, c.group, c.phase, c.tone, c.line, c.wait, c.since].join("\u0001"));
+	const cars = carRows(query);
 	const asks = askRows(query);
-	return JSON.stringify([cars, asks.session, asks.rows.map((a) => [a.id, a.subject, a.item?.session, a.item?.id, a.item?.uid])]);
+	return JSON.stringify([cars.session, cars.rows.map((c) => [c.id, c.item, c.group, c.phase, c.tone, c.line, c.wait, c.since]), asks.session, asks.rows.map((a) => [a.id, a.subject, a.item?.session, a.item?.id, a.item?.uid])]);
 }

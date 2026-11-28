@@ -6,7 +6,7 @@ import { history } from "../ledger/herdr-runs.ts";
 import { t } from "../state/i18n-bridge.ts";
 import type { Task } from "../tool/types.ts";
 import { type liveRows, type RunRow, runState } from "./live-runs.ts";
-import { type AskRow, type AskRows, askNames, type CarRow, carNames } from "./sb-rows.ts";
+import { type AskRow, type AskRows, askNames, type CarRow, type CarRows, carNames } from "./sb-rows.ts";
 
 const OVERLAY_OTHERS = "Other workers";
 const OVERLAY_ASKS = "Waiting on you";
@@ -64,10 +64,10 @@ export const mostActive = (rows: readonly Live[]) => rows.reduce((best, l) => (a
 export const runsOf = (rows: readonly Live[]) => rows.flatMap((l) => (l.kind === "run" ? [l.run] : []));
 
 /** The task each car and ask belongs to (by `car:<id>`, `ask:<id>`), among the tasks the panel may show. */
-export function attribute(tasks: readonly Task[], cars: readonly CarRow[], asks: AskRows): Map<string, number> {
+export function attribute(tasks: readonly Task[], cars: CarRows, asks: AskRows): Map<string, number> {
 	const owners = new Map<string, number>();
-	for (const c of cars) {
-		const owner = tasks.find((task) => carNames(c, task));
+	for (const c of cars.rows) {
+		const owner = tasks.find((task) => carNames(c, task, cars.session));
 		if (owner) owners.set(`car:${c.id}`, owner.id);
 	}
 	for (const a of asks.rows) {

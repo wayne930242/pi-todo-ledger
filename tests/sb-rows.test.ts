@@ -252,3 +252,15 @@ test("carrows-review-F001: an ask goes under its todo only when the uid it was b
 		}
 	}
 });
+
+test("carrows-review-F003: a car's `<session8>#id` must name this session; another session's prefix, or an sb that names no session, puts it in its group", async (ctx) => {
+	env(ctx, { view: "full" });
+	for (const [item, session] of [["abcdefgh#1", undefined], [`${ME.slice(0, 8)}#1`, null]] as const) {
+		const m = await mount([task(1, "in_progress")], () => [], { cars: () => v1([car("c", { item })]), ...(session === null ? { session } : {}) });
+		try {
+			assert.deepEqual(m.render().slice(1, 4), ["├─ ◐ t1", "├─ Other cars", "│    └ 🚂 1128a ▰▰▰▱▱▱▱ merge 12m"], item);
+		} finally {
+			m.overlay.dispose();
+		}
+	}
+});

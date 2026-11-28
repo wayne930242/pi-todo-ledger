@@ -155,8 +155,9 @@ Without sb, or with an sb that does not answer them, nothing of them shows and t
      └ 📮 已送出 3m · 調度員還沒收 · MP-5779
 ```
 
-- A car row goes under the todo sb names in its `item` (the todo's uid, or `<session8>#<id>`): sb picks the open todo whose subject
-  names the car's ticket. sb writes every word of the row (`🚂 1128c ▰▰▰▱▱▱▱ merge`, `✅ 1128c 已落地 1.62.0-beta.24`, `↩ 退回`);
+- A car row goes under the todo sb names in its `item` (the todo's uid, or `<session8>#<id>` whose eight characters are those of the
+  `session` the probe names): sb picks the open todo whose subject names the car's ticket. An item the panel cannot match goes in
+  the car's group. sb writes every word of the row (`🚂 1128c ▰▰▰▱▱▱▱ merge`, `✅ 1128c 已落地 1.62.0-beta.24`, `↩ 退回`);
   the panel adds the time in the car's current stage and what it waits on, and colours a warning row `warning` and a returned or
   dropped one `error`. A car with no todo goes in the group sb names, `其他車廂` / `Other cars`, or `火車` / `Trains` for the trains an
   integrator received cars for.

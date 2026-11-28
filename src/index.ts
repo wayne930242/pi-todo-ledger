@@ -177,7 +177,7 @@ export default function (
 		} catch {
 			return false;
 		}
-		return (Array.isArray(p.rows?.rows) && p.rows.rows.length > 0) || carRows(querySb).length > 0 || askRows(querySb).rows.length > 0;
+		return (Array.isArray(p.rows?.rows) && p.rows.rows.length > 0) || carRows(querySb).rows.length > 0 || askRows(querySb).rows.length > 0;
 	};
 
 	async function updateTodoOverlay(
