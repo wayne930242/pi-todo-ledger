@@ -40,5 +40,7 @@ export function bindRun(previous: unknown, newest: BoundRun) {
 		...(newest.pane ? { pane: newest.pane } : {}),
 		runs: next.slice(-6),
 		...(dropped ? { older: dropped } : {}),
+		// What the todo's runs spent (herdr-spend.ts) outlives a new binding.
+		...(previous && typeof previous === "object" && "spend" in previous ? { spend: (previous as { spend: unknown }).spend } : {}),
 	};
 }

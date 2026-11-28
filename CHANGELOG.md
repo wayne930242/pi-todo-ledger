@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.0
+
+- When a bound subagent's run ends, the ledger records what it spent on its todo in `metadata.herdr.spend`: tokens, cost, wall time, runs, and models, summed over every run of the todo. A resume of the same session replaces that session's figures instead of counting them twice. `todo get` shows a `spend:` line. See [CONTRACT.md](CONTRACT.md#run-spend-metadataherdrspend).
+
 ## 0.8.0
 
 - `todo` `create` and `update` take `waitsOn` (what the task waits on, such as `trains to end`) and `until` (a future ISO time) to mark a task as waiting; `update` with `null` clears either. They write the `metadata.waitsOn` and `metadata.until` keys the panel, `/todos`, and tool results already show as `⏸`, so the `todo/v1` snapshot keeps its shape and older lists read as before.

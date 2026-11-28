@@ -37,6 +37,7 @@ import {
 import { makeFinishCall } from "./ledger/finish-call.ts";
 import { GuardRegistry } from "./ledger/guards.ts";
 import { registerHerdrOwner } from "./ledger/herdr-owner.ts";
+import { registerHerdrSpend } from "./ledger/herdr-spend.ts";
 import { NamespaceRegistry } from "./ledger/namespaces.ts";
 import { I18N_NAMESPACE } from "./state/i18n-bridge.ts";
 import { replayFromBranch } from "./state/replay.ts";
@@ -206,6 +207,7 @@ export default function (
 	const finish = makeFinishCall(pi, namespaces, guards);
 	registerTodoTool(pi, finish);
 	registerHerdrOwner(pi, finish);
+	registerHerdrSpend(pi, finish);
 	registerTodosCommand(pi);
 	pi.events.emit(READY_EVENT, { v: CONTRACT_VERSION });
 

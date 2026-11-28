@@ -46,6 +46,7 @@ The new fields are optional parameters of `create` (and of each `tasks[]` item) 
 Pass that value as a Herdr `subagent`'s `item` (or use `<session8>#<id>` from the same session).
 Once the launch is acknowledged, the ledger sets `owner` to the child's full name and records its run id in [`metadata.herdr`](CONTRACT.md#optional-herdr-launch-identity-metadataherdr).
 Use `metadata.herdr.id` to resolve or message the worker by its run key.
+When a bound run ends, the ledger adds its tokens, cost, wall time, and models to [`metadata.herdr.spend`](CONTRACT.md#run-spend-metadataherdrspend), summed over the todo's runs; `get` shows them.
 Use a name with `/boss send` only if it matches the name Straw Boss shows; a launch named `API worker` may appear there as `api-worker`.
 You can still set `owner` by hand.
 

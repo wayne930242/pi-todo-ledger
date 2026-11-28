@@ -195,6 +195,30 @@ For names longer than 24 UTF-16 units, Straw Boss displays just the first 23 uni
 Resolve the live pane at read time rather than targeting that cosmetic label or a saved pane id.
 This namespace needs no new status, schema field, or contract version.
 
+### Run spend (`metadata.herdr.spend`)
+
+Since 0.8.0, when a bound run ends, the ledger records what it spent on its task.
+The host announces the end with a custom message in the calling session: `subagent_result` when the run finished (its `details.elapsed` is the run's wall time in seconds) or `subagent_ping` when it stopped to ask.
+The ledger finds the task as the non-deleted one whose `metadata.herdr.runs` hold the message's `details.sessionFile`; when no task holds it, by `details.item` as a launch does (a uid, or `<session8>#<id>` of the calling session).
+No match, several matches, or a deleted task leave the list unchanged.
+
+It reads that session file, sums the `usage` of every assistant turn in it (every branch: all of it was spent), and issues a normal guarded `update` of `metadata.herdr.spend`:
+
+```json
+{
+  "input": 1500, "output": 300, "cacheRead": 3000, "cacheWrite": 0, "tokens": 4800, "cost": 0.75,
+  "ms": 125000, "runs": 1, "models": ["anthropic/claude-opus-5-5"],
+  "sessions": [{ "session": "/path/child.jsonl", "input": 1500, "output": 300, "cacheRead": 3000, "cacheWrite": 0, "tokens": 4800, "cost": 0.75, "models": ["anthropic/claude-opus-5-5"] }]
+}
+```
+
+The top-level figures are the task's totals over all its runs: `tokens` is pi's `totalTokens`, `cost` its `cost.total` in US dollars, `ms` the sum of the results' `elapsed`, `runs` the number of ended runs (results and pings), and `models` the `provider/model` ids seen, first seen first, at most eight.
+A resume continues the same session file, so the ledger replaces that session's figures with the file's new total instead of adding them again; `sessions` keeps up to twelve, newest last, and an older one stays in the totals but is no longer told apart.
+A file that cannot be read adds the run and its time, not tokens.
+A later launch keeps `spend` when it rebinds `metadata.herdr`.
+A refusal by a validator or guard leaves the list unchanged and appends `Todo spend: <reason>` to the message.
+The figures are what pi wrote in the child's transcript, bookkeeping rather than a bill. `get` shows them on a `spend:` line.
+
 ## 4. Change guards
 
 A namespace validator judges one task's value.
