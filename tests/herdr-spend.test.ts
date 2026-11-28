@@ -165,3 +165,76 @@ test("the spend write keeps the todo's other metadata, a wait mark included", as
 	assert.equal(md.waitsOn, "boss"); assert.equal(md.until, "2099-01-01"); assert.deepEqual(md.train, { step: 1 });
 	assert.equal((md.herdr as { spend: { runs: number } }).spend.runs, 1);
 });
+
+/** A guard that holds the next change until `release()`; `entered` once a change reaches it. */
+function holdingGuard(h: Harness) {
+	let entered = false, release!: () => void;
+	const gate = new Promise<void>((r) => (release = r));
+	h.emit("todo:guard", { v: 1, id: "hold", check: async () => { entered = true; await gate; return undefined; } });
+	return { entered: () => entered, release };
+}
+
+test("a spend write that waited on a guard while the session moved to another branch writes nothing there: the new branch keeps its own list", async () => {
+	const h = load({ sessionId: "b7a70001-parent" });
+	await h.fire("session_start");
+	await h.call({ action: "create", subject: "Only on B" });
+	const other = [...h.branch]; // branch B: a list without the launch's todo
+	await h.call({ action: "create", subject: "A" });
+	const uid = task(h, 2).uid as string, file = child("branched", [turn("m", usage(10, 10, 0.02))]);
+	await launch(h, uid, "run-b", file);
+	const hold = holdingGuard(h);
+	h.emit("subagent:run-end", { v: 1, id: "run-b", kind: "result", item: uid, sessionFile: file, elapsed: 5 });
+	await until(hold.entered);
+	h.branch.splice(0, h.branch.length, ...other);
+	await h.fire("session_tree");
+	const n = snapshots(h.branch).length;
+	hold.release();
+	for (let i = 0; i < 50; i++) await new Promise((r) => setTimeout(r, 2));
+	assert.equal(snapshots(h.branch).length, n, "nothing is appended to branch B");
+	assert.deepEqual(snapshots(h.branch).at(-1)!.tasks.map((t) => t.subject), ["Only on B"]);
+	assert.doesNotMatch(text(await h.call({ action: "list" })), /\bA\b/, "the live list is still B's");
+});
+
+test("a spend write that waited on a guard while the session shut down writes nothing and leaves no list behind", async () => {
+	const h = load({ sessionId: "5d5d0001-parent" });
+	await h.fire("session_start");
+	await h.call({ action: "create", subject: "A" });
+	const uid = task(h).uid as string, file = child("shut", [turn("m", usage(10, 10, 0.02))]);
+	await launch(h, uid, "run-s", file);
+	const hold = holdingGuard(h);
+	h.emit("subagent:run-end", { v: 1, id: "run-s", kind: "result", item: uid, sessionFile: file, elapsed: 5 });
+	await until(hold.entered);
+	await h.fire("session_shutdown");
+	const n = snapshots(h.branch).length, announced = h.events("todo:changed").length;
+	hold.release();
+	for (let i = 0; i < 50; i++) await new Promise((r) => setTimeout(r, 2));
+	assert.equal(snapshots(h.branch).length, n, "no entry after shutdown");
+	assert.equal(h.events("todo:changed").length, announced, "no change announced");
+	assert.doesNotMatch(text(await h.call({ action: "list" })), /\bA\b/, "the evicted slot is not rebuilt");
+});
+
+test("a spend write whose list was replayed again on the same branch (a compaction) is checked against the new list and still lands", async () => {
+	const h = load({ sessionId: "c0c00001-parent" });
+	await h.fire("session_start");
+	await h.call({ action: "create", subject: "A" });
+	const uid = task(h).uid as string, file = child("compacted", [turn("m", usage(10, 10, 0.02))]);
+	await launch(h, uid, "run-c", file);
+	const hold = holdingGuard(h);
+	h.emit("subagent:run-end", { v: 1, id: "run-c", kind: "result", item: uid, sessionFile: file, elapsed: 5 });
+	await until(hold.entered);
+	await h.fire("session_compact");
+	hold.release();
+	await until(() => spendOf(h)?.runs === 1);
+	assert.equal(spendOf(h)?.tokens, 20);
+});
+
+test("a run-end event with only v, id and kind (a failed run without a session file) counts the run and its time on the todo its run id names", async () => {
+	const h = load({ sessionId: "fa110001-parent" });
+	await h.fire("session_start");
+	await h.call({ action: "create", subject: "A" });
+	await launch(h, task(h).uid as string, "run-f", join(dir, "never-written.jsonl"));
+	h.emit("subagent:run-end", { v: 1, id: "run-f", kind: "result", elapsed: 63 });
+	await until(() => spendOf(h)?.runs === 1);
+	assert.equal(spendOf(h)?.ms, 63_000);
+	assert.equal(spendOf(h)?.tokens, 0);
+});

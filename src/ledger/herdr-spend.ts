@@ -4,7 +4,7 @@ import { applyTaskMutation } from "../state/state-reducer.ts";
 import { getState, sid } from "../state/store.ts";
 import { sanitizeTerminalText } from "../tool/sanitize.ts";
 import type { Task } from "../tool/types.ts";
-import type { FinishCall } from "./finish-call.ts";
+import { type FinishCall, MOVED } from "./finish-call.ts";
 import { runningGuard } from "./guards.ts";
 import { history } from "./herdr-runs.ts";
 import { addRun, fileSpend, nonblank, record, spendOf } from "./spend.ts";
@@ -63,16 +63,21 @@ export function registerHerdrSpend(pi: ExtensionAPI, finish: FinishCall) {
 		if (!found || (end.run && spendOf(record(found.metadata?.herdr) ? found.metadata.herdr.spend : undefined).ended?.includes(end.run))) return undefined;
 		if (runningGuard(session)) return "cannot update the list from its own change guard";
 		const spent = end.file ? await fileSpend(end.file, parentIds(ctx)) : undefined; // read before the lock: a large file must not hold the session's todo calls
-		return withSessionLock(session, async () => {
-			const before = getState(session), task = taskOf(before.tasks, end);
-			if (!task) return undefined;
-			const herdr = record(task.metadata?.herdr) ? task.metadata.herdr : {};
-			if (end.run && spendOf(herdr.spend).ended?.includes(end.run)) return undefined;
-			const spend = addRun(herdr.spend, end.file, spent, end.elapsed, end.run);
-			const params = { action: "update" as const, id: task.id, metadata: { herdr: { ...herdr, spend } } };
-			const result = await finish(session, ctx.cwd, "update", params, before, applyTaskMutation(before, "update", params));
-			return result.details.error;
-		});
+		// A list replaced while the write waited on its guards refuses it (MOVED): look again in the list that is live now. The same branch's replay
+		// still holds the todo, another branch's list or a shut-down session's (empty) does not, and the end is dropped there.
+		for (let attempt = 0; ; attempt++) {
+			const why = await withSessionLock(session, async () => {
+				const before = getState(session), task = taskOf(before.tasks, end);
+				if (!task) return undefined;
+				const herdr = record(task.metadata?.herdr) ? task.metadata.herdr : {};
+				if (end.run && spendOf(herdr.spend).ended?.includes(end.run)) return undefined;
+				const spend = addRun(herdr.spend, end.file, spent, end.elapsed, end.run);
+				const params = { action: "update" as const, id: task.id, metadata: { herdr: { ...herdr, spend } } };
+				const result = await finish(session, ctx.cwd, "update", params, before, applyTaskMutation(before, "update", params));
+				return result.details.error;
+			});
+			if (why !== MOVED || attempt === 2) return why;
+		}
 	};
 
 	// The host's event: an end the model may never read (a steer cleared before its turn) is still spent. A refusal here is said again by the message, when it comes.

@@ -200,7 +200,7 @@ This namespace needs no new status, schema field, or contract version.
 Since 0.9.0, when a bound run ends, the ledger records what it spent on its task.
 A run's end arrives two ways:
 
-- the host's event `subagent:run-end` on `pi.events`, `{ v: 1, id, kind, name, item?, sessionFile?, elapsed? }`: `id` is the run id the launch acknowledged (`details.id`), `kind` is `"result"` or `"ping"`, and `elapsed` the run's wall time in seconds. The host sends it as it delivers the end, so an end still counts when its message never reaches the model (a steer cleared before the turn);
+- the host's event `subagent:run-end` on `pi.events`, `{ v: 1, id, kind, name?, item?, sessionFile?, elapsed? }`: `id` is the run id the launch acknowledged (`details.id`), `kind` is `"result"` or `"ping"`, and `elapsed` the run's wall time in seconds. Only `v`, `id`, and `kind` are required: a run that failed before it wrote a session file ends without `sessionFile` and counts its time, and the ledger never reads `name`. The host sends it as it delivers the end, so an end still counts when its message never reaches the model (a steer cleared before the turn);
 - the custom message in the calling session: `subagent_result` when the run finished or `subagent_ping` when it stopped to ask. Its `details` name `sessionFile` and `item`, and `elapsed` when the host supplies it (Straw Boss adds `id` and a ping's `elapsed`).
 
 The ledger finds the task as the launch bound it: the non-deleted task whose `metadata.herdr.runs` hold the run id, else the end's `sessionFile`, else, by `item`, the task with that uid.
@@ -224,8 +224,9 @@ A resume continues the same session file, so the ledger replaces that session's 
 A file that cannot be read adds the run and its time, not tokens.
 A later launch keeps `spend` when it rebinds `metadata.herdr`.
 A refusal by a validator or guard leaves the list unchanged and appends `Todo spend: <reason>` to the message.
-The figures are what pi wrote in the child's transcript, bookkeeping rather than a bill. `get` shows them on a `spend:` line.
-A host that launches fallback models in one run delivers only the last attempt's file, so earlier attempts are not counted.
+A write whose list was replaced while its guards ran (see [Change guards](#4-change-guards)) looks again in the list that is live now: a replay of the same branch still holds the task and records there, another branch's list or a shut-down session's does not, and the end is dropped.
+The figures are an estimate from what pi wrote in the child's transcript, bookkeeping rather than a bill. `get` shows them on a `spend:` line.
+A host that launches fallback models in one run delivers only the last attempt's file: the last attempt is always counted, earlier attempts are not.
 
 ## 4. Change guards
 
@@ -286,6 +287,7 @@ A guard reads the list from `change.before` and `change.after` and never calls t
 The same holds along a chain of guards: when session A's guard calls `todo` for session B, and B's guard calls `todo` for A, the call for A is refused the same way, naming A's guard.
 Calling `todo` for a session whose guard is not running further up the chain is allowed.
 A call aborted (through the tool's abort signal) while it waits for an earlier call or while its guards run commits nothing and returns `Error: call aborted; nothing changed`, a `noop` update included.
+A call whose list stops being the session's live list while its guards run commits nothing and returns `Error: the list was replaced while the change waited (branch switch, replay, or shutdown); nothing changed`: a `session_tree` switch, a replay on `session_compact` or `session_start`, or `session_shutdown` does not wait for the session's queue, and a write computed from the old list would put it on the new branch or rebuild the evicted list.
 
 ## Coexistence
 

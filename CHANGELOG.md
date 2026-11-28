@@ -2,7 +2,8 @@
 
 ## 0.9.0
 
-- When a bound subagent's run ends, the ledger records what it spent on its todo in `metadata.herdr.spend`: tokens, cost, wall time, runs, and models, summed over every run of the todo. A resume of the same session replaces that session's figures instead of counting them twice; a forked child's copy of its launcher's turns is not counted; an end is tied only to the todo its launch bound; the host's `subagent:run-end` event counts an end the model never read, once by its run id. `todo get` shows a `spend:` line. See [CONTRACT.md](CONTRACT.md#run-spend-metadataherdrspend).
+- When a bound subagent's run ends, the ledger records what it spent on its todo in `metadata.herdr.spend`: tokens, cost, wall time, runs, and models, summed over every run of the todo. A resume of the same session replaces that session's figures instead of counting them twice; a forked child's copy of its launcher's turns is not counted; an end is tied only to the todo its launch bound; the host's `subagent:run-end` event counts an end the model never read, once by its run id. `todo get` shows a `spend:` line. The figures are an estimate from the child's transcript, not a bill; with fallback models only the last attempt is counted. See [CONTRACT.md](CONTRACT.md#run-spend-metadataherdrspend).
+- A change whose list was replaced while its guards ran (a `session_tree` branch switch, a replay, or `session_shutdown`) commits nothing and returns `Error: the list was replaced while the change waited (branch switch, replay, or shutdown); nothing changed`, instead of writing the old list onto the new branch or rebuilding an evicted one. A spend write looks again in the live list.
 
 ## 0.8.0
 
