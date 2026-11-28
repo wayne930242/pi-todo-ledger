@@ -41,7 +41,7 @@ import { type PlanRow, planView } from "./view/plan.ts";
 import type { Task } from "./tool/types.ts";
 
 import { history } from "./ledger/herdr-runs.ts";
-import { liveRows, runLine, type Query, type RunRow } from "./view/live-runs.ts";
+import { liveRows, runLine, runState, type Query, type RunRow } from "./view/live-runs.ts";
 
 const WIDGET_KEY = "rpiv-todos";
 
@@ -86,6 +86,14 @@ interface Allotment {
 	left: number;
 }
 
+/** Narrowest left part (branch, glyph, id, start of the subject) a compact row keeps before its run. */
+const COMPACT_MIN_LEFT = 12;
+
+/** How a run ranks for the one spot on a compact row: working, then waiting for a reply, then the rest, idle last. */
+const ACTIVITY: Record<string, number> = { running: 0, waiting: 1, idle: 3 };
+const mostActive = (runs: readonly RunRow[]) =>
+	runs.reduce((best, r) => ((ACTIVITY[runState(r) ?? ""] ?? 2) < (ACTIVITY[runState(best) ?? ""] ?? 2) ? r : best));
+
 /** What one frame's row drawing needs, shared by the full and focus views. */
 interface DrawContext {
 	theme: Theme;
@@ -99,6 +107,8 @@ interface DrawContext {
 	showIds: boolean;
 	now: number;
 	evidence: "inline" | "screen" | undefined;
+	/** Compact mode: a task's runs, and the Other workers group, share one row with it (see budgeted). */
+	compact: boolean;
 }
 
 export class TodoOverlay {
@@ -422,6 +432,7 @@ export class TodoOverlay {
 			showIds,
 			now: Date.now(),
 			evidence: this.evidence(),
+			compact: false,
 		};
 
 		// Collapsed view: just the heading + a dim "└─" hint naming the next state,
@@ -591,8 +602,9 @@ export class TodoOverlay {
 	 * 5. completed tasks without a live run.
 	 * A task with live runs that missed rank 2 gets no row, so its runs join the group.
 	 * An in-progress task whose runs do not fit keeps its row and counts them.
+	 * `compact`: runs take no rows of their own, and the group takes one row.
 	 */
-	private allot(candidates: readonly Task[], slots: number, draw: DrawContext): Allotment {
+	private allot(candidates: readonly Task[], slots: number, draw: DrawContext, compact: boolean): Allotment {
 		const chosen = new Set<Task>();
 		const withRuns = new Set<Task>();
 		let used = 0;
@@ -604,14 +616,14 @@ export class TodoOverlay {
 		for (const task of candidates) if (task.status === "in_progress" && take(1)) chosen.add(task);
 		for (const task of candidates) {
 			const runs = this.children(task, draw).length;
-			if (runs && take(runs + Number(!chosen.has(task)))) {
+			if (runs && take((compact ? 0 : runs) + Number(!chosen.has(task)))) {
 				chosen.add(task);
 				withRuns.add(task);
 			}
 		}
 		const workers = this.groupCandidates([...chosen], draw);
-		const group = groupFit(slots - used, workers.length);
-		used += group ? 1 + group : 0;
+		const group = compact ? (workers.length && take(1) ? workers.length : 0) : groupFit(slots - used, workers.length);
+		if (!compact) used += group ? 1 + group : 0;
 		for (const done of [false, true])
 			for (const task of candidates)
 				if ((task.status === "completed") === done && !chosen.has(task) && !this.children(task, draw).length && take(1))
@@ -622,13 +634,23 @@ export class TodoOverlay {
 	/**
 	 * The allotment for `budget` rows, keeping one for the summary when anything of
 	 * `total` tasks or the group is left out. With nothing to summarize, the hint takes
-	 * its own row only when one is spare. Sets `draw.others` to the group.
+	 * its own row only when one is spare. When some live run would get no row of its
+	 * own, the panel switches to compact mode (each run joins its task's row, the group
+	 * takes one row). Sets `draw.others` to the group and `draw.compact`.
 	 */
 	private budgeted(candidates: readonly Task[], total: number, budget: number, draw: DrawContext) {
 		const cut = (a: Allotment) => a.shown.length < total || a.group < a.workers.length;
-		let shown = this.allot(candidates, budget, draw);
-		const summarized = cut(shown);
-		if (summarized) shown = this.allot(candidates, budget - 1, draw);
+		const fit = (compact: boolean) => {
+			const first = this.allot(candidates, budget, draw, compact);
+			return cut(first)
+				? { shown: this.allot(candidates, budget - 1, draw, compact), summarized: true }
+				: { shown: first, summarized: false };
+		};
+		let { shown, summarized } = fit(false);
+		draw.compact =
+			shown.group < shown.workers.length ||
+			shown.shown.some((task) => this.children(task, draw).length > 0 && !shown.withRuns.has(task));
+		if (draw.compact) ({ shown, summarized } = fit(true));
 		draw.others = shown.workers;
 		const hint = this.keyHint();
 		const hintRow = !summarized && hint !== undefined && shown.left > 0;
@@ -660,15 +682,50 @@ export class TodoOverlay {
 	}
 
 	/**
+	 * A compact row: `left` (a task row or the group heading), then ` ⟶ ` and the most
+	 * active of `runs`, then `+N` for the others. The left part is cut first, so the run
+	 * stays whole. A row shown in full claims every run it stands for; one cut into the
+	 * run, or with no room for the left part, carries no marker and claims none.
+	 * In the group (`group`), a run of a hidden task carries its task number.
+	 */
+	private drawCompact(lines: string[], left: string, runs: RunRow[], draw: DrawContext, frame: Frame, group = false) {
+		const { theme, width, truncate, now, evidence } = draw;
+		const lead = mostActive(runs);
+		const owner = draw.runOwners.get(lead.id);
+		const right =
+			theme.fg("dim", " ⟶ ") +
+			(group && owner !== undefined ? `#${owner} ` : "") +
+			runLine(lead, now, (color, text) => theme.fg(color, text)) +
+			(runs.length > 1 ? theme.fg("dim", ` +${runs.length - 1}`) : "");
+		const room = width - visibleWidth(right);
+		const roomy = visibleWidth(left) <= room || room >= COMPACT_MIN_LEFT;
+		const line = roomy ? truncateToWidth(left, Math.max(room, 0), "…") + right : truncate(left + right);
+		const whole = roomy && visibleWidth(line) <= width;
+		frame.ticking = true;
+		if (whole && evidence === "screen") {
+			const marked = line + this.marker(lead.id);
+			for (const r of runs) frame.marked.set(r.id, marked);
+			lines.push(marked);
+		} else {
+			lines.push(truncate(line));
+			if (whole && evidence === "inline") frame.drawn.push(...runs.map((r) => r.id));
+		}
+	}
+
+	/**
 	 * The Other workers group: a heading row, then this session's runs bound to no
 	 * task, drawn and claimed like bound run rows. `closed` means it ends the panel.
 	 */
 	private drawGroup(runs: RunRow[], closed: boolean, draw: DrawContext, frame: Frame): string[] {
 		if (!runs.length) return [];
 		const { theme, truncate } = draw;
-		const lines = [
-			truncate(`${theme.fg("dim", closed ? "└─" : "├─")} ${theme.fg("muted", t("overlay.others", OVERLAY_OTHERS))}`),
-		];
+		const heading = `${theme.fg("dim", closed ? "└─" : "├─")} ${theme.fg("muted", t("overlay.others", OVERLAY_OTHERS))}`;
+		if (draw.compact) {
+			const lines: string[] = [];
+			this.drawCompact(lines, heading, runs, draw, frame, true);
+			return lines;
+		}
+		const lines = [truncate(heading)];
 		for (const [j, r] of runs.entries())
 			this.drawRun(lines, r, `${closed ? " " : "│"}    ${j === runs.length - 1 ? "└" : "├"} ${draw.runOwners.has(r.id) ? `#${draw.runOwners.get(r.id)} ` : ''}`, draw, frame);
 		return lines;
@@ -700,11 +757,12 @@ export class TodoOverlay {
 			const count = !fits
 				? ` · ${children.length} ${t("run.count", "runs")}`
 				: "";
-			lines.push(
-				truncate(
-					`${theme.fg("dim", last ? "└─" : "├─")} ${formatPlanTaskLine(display, theme, showIds, row)}${count}${older && live ? ` +${older}` : ""}`,
-				),
-			);
+			const taskLine = `${theme.fg("dim", last ? "└─" : "├─")} ${formatPlanTaskLine(display, theme, showIds, row)}${count}${older && live ? ` +${older}` : ""}`;
+			if (fits && children.length && draw.compact) {
+				this.drawCompact(lines, taskLine, children, draw, frame);
+				continue;
+			}
+			lines.push(truncate(taskLine));
 			if (!fits) continue;
 			const indent = "  ".repeat(row?.depth ?? 0);
 			for (const [j, r] of children.entries())

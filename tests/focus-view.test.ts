@@ -146,8 +146,8 @@ test("the summary counts hidden in-progress, pending and completed tasks, in zh-
 	const m = await mount(tasks, [run("a"), run("b")]);
 	assert.deepEqual(m.render(), [
 		"● Todos (2/10)",
-		"├─ ◐ #1 t1 · 1 個工作階段",
-		"├─ ◐ #2 t2 · 1 個工作階段",
+		"├─ ◐ #1 t1 ⟶ a · astra · 執行中 5s",
+		"├─ ◐ #2 t2 ⟶ b · astra · 執行中 5s",
 		"└─ +1 進行中、5 待處理、2 已完成 · ctrl+shift+t 完整",
 		"",
 	]);

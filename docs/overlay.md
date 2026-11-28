@@ -156,10 +156,42 @@ leaving out zero counts.
 Ranking run rows above open tasks keeps the workers under their todos, so the
 panel can claim them and the Subagents widget lists only what is left.
 
+### Compact mode
+
+When some live run would still get no row of its own, the panel switches to
+compact mode for that frame. A task's runs then share the task's row, and the
+Other workers group takes one row:
+
+```text
+● Todos (54/71)
+├─ ◐ #35 Final BitD UAT round for the boss
+├─ ◐ #55 S3 地圖 tab on core Table Maps, BitD map retired ⟶ coremaptab-ui · opus · 執行中 4m
+├─   ○ #57 S4 map ports + two-way claims ↔ turf sync
+├─ ◐ #56 F1 faction tracker storage (migration 198) ⟶ factionsdb-build · opus · 執行中 21m
+├─ ◐ #65 EP sheet: centering, morph grid, 更換義體, Select, pictures
+├─ ◐ #66 Site-wide: native selects → shared Select, then lint guard ⟶ selectsweep-ui · opus · 執行中 39m
+├─ ◐ #67 EP rules book: add Flexbot Confidential + Rules Primer; Flexbot … ⟶ epbooks-build · opus · 執行中 30m
+├─ ◐ #68 EP scenarios: 心智獵人, 小心WMD, 異噬, 超企業劫案, 奈米任務 ⟶ epscen-review · opus · 審查中 6m +2
+├─ ◐ #70 Table session: reading dialogs dock to the workspace pane, chat stays usable
+├─ 其他 worker ⟶ skald-scout · opus · 執行中 3m +1
+└─ +62 項未顯示 (54 已完成, 8 待處理) · ctrl+shift+t 收合
+```
+
+- After ` ⟶ ` comes the most active run (working, then waiting for a reply, then
+  other states, idle last; the host's order breaks ties), in the run row format,
+  then `+N` for the task's other live runs.
+- A narrow row cuts the task part with `…` first, so the run stays whole.
+- The ranks above still apply; runs simply cost no rows, and the group costs one.
+  A task with no live run keeps its plain row.
+- A compact row painted in full claims every run it stands for, `+N` included,
+  through the same inline or screen check as a run row. A row cut into its run,
+  or with fewer than 12 columns left for the task, claims none.
+- When every run fits on its own row, the panel keeps the two-row layout.
+
 In the full view, Pi's tool-output expansion shortcut (`ctrl+o` by default)
 expands the widget to show every task. Collapsing Pi's tool output reapplies the configured
-row budget. Unfinished work is therefore the last thing to disappear in the
-compact view. See [configuration.md](./configuration.md#maxwidgetlines) for the
+row budget. Unfinished work is therefore the last thing to disappear under the
+row budget. See [configuration.md](./configuration.md#maxwidgetlines) for the
 budget's floor and reload semantics.
 
 ## Completed tasks fading out
