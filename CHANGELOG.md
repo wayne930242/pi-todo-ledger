@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.0
+
+- `todo` `create` and `update` take `waitsOn` (what the task waits on, such as `trains to end`) and `until` (a future ISO time) to mark a task as waiting; `update` with `null` clears either. They write the `metadata.waitsOn` and `metadata.until` keys the panel, `/todos`, and tool results already show as `⏸`, so the `todo/v1` snapshot keeps its shape and older lists read as before.
+- Completing or deleting a task removes its wait mark. A new prompt guideline tells the model to mark a task waiting instead of leaving it open without a word.
+
 ## 0.7.3
 
 - Warn at startup if rpiv-todo is still installed or another extension provides a competing todo tool or command. The warning identifies the active tool and how to remove a configured package.
