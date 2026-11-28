@@ -56,20 +56,13 @@ export { TOOL_NAME } from "./tool/types.ts";
 // Tool registration
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_PROMPT_SNIPPET = "Manage a task list to track multi-step progress";
+export const DEFAULT_PROMPT_SNIPPET = "Track multi-step work in a task list";
 export const DEFAULT_PROMPT_GUIDELINES: string[] = [
-	"Use `todo` for complex work with 3+ steps, when the user gives you a list of tasks, or immediately after receiving new instructions to capture requirements. Skip it for single trivial tasks and purely conversational requests.",
-	"When starting a task from the todo list, mark it in_progress BEFORE beginning work. Mark it completed IMMEDIATELY when done — never batch completions. Exactly one task in_progress at a time.",
-	"Never mark a task completed if tests are failing, the implementation is partial, or you hit unresolved errors — keep it in_progress and create a new task for the blocker instead.",
-	"Task status is a 4-state machine: pending → in_progress → completed, plus deleted as a tombstone. Pass activeForm (present-continuous label, e.g. 'researching existing tool') when marking in_progress.",
-	'To change a task\'s status, call update with the task id and the target status, e.g. {"action":"update","id":3,"status":"completed"} or {"action":"update","id":3,"status":"in_progress","activeForm":"writing tests"}. status is the field that changes the task; an update without a mutable field (status or another) is rejected.',
-	"Use blockedBy to express dependencies (A is blocked by B). On create, pass blockedBy as the initial set. On update, use addBlockedBy / removeBlockedBy (additive merge — do not resend the full array). Cycles are rejected.",
-	"To create several independent tasks at once, pass create with tasks: [{subject}, ...]. Do not also pass subject. tasks[] cannot blockedBy each other (ids do not exist until the call commits); create the prerequisite first, then the dependent with blockedBy. Dependency chains stay single-create.",
-	"Use import with a snapshot file path, or session (an earlier session's id), to restore a handed-over list into an empty session list.",
-	"list hides tombstoned (deleted) tasks by default; pass includeDeleted:true to see them. Pass status to filter by a single status.",
-	"Subject must be short and imperative (e.g. 'Research existing tool'); description is for long-form detail. activeForm is a present-continuous label shown while in_progress.",
-	"Optional bookkeeping fields: points (effort, 0 to 10), anchor (the check that shows the task is done, e.g. a test command), and evidence (runs of checks, each {command, sha?, result: pass|fail, at?}). On update, points and anchor replace; evidence is appended, never replaced.",
-	"When a task waits on something outside your control (a person, CI, a train, a release window), mark it with waitsOn (what it waits on) and, if known, until (ISO time); it shows ⏸ and reminders leave it alone while it waits. To end a wait early, clear every field you set (waitsOn: null, until: null), since an until left in place keeps the task waiting; completing the task clears both.",
+	"Use todo for work with 3+ steps, a user task list, or immediately on new instructions to capture requirements. Skip single trivial tasks and conversation.",
+	"Mark one task in_progress before starting (with activeForm); mark it completed immediately when done, never in batches. With failing tests, partial work or unresolved errors, keep it in_progress and create a blocker task.",
+	"Set status with update and id: pending → in_progress → completed; deleted is a tombstone. update needs a mutable field.",
+	"For dependencies, create prerequisites first, then dependents with blockedBy. Update via addBlockedBy/removeBlockedBy, not a full set; cycles are rejected.",
+	"On external waits (person, CI, train, release window), set waitsOn and, if known, until. End a wait early with waitsOn: null and until: null for the fields you set; a future until still holds the wait.",
 ];
 
 export function registerTodoTool(pi: ExtensionAPI, finish: FinishCall): void {
@@ -77,8 +70,7 @@ export function registerTodoTool(pi: ExtensionAPI, finish: FinishCall): void {
 	pi.registerTool({
 		name: TOOL_NAME,
 		label: TOOL_LABEL,
-		description:
-			"Manage a task list for tracking multi-step progress. Actions: create (new task, or several independent tasks at once via tasks[]), update (change status/fields/dependencies), list (all tasks, optionally filtered by status), get (single task details), delete (tombstone), clear (reset all), import (restore a snapshot file into an empty list). Status: pending → in_progress → completed, plus deleted tombstone. Use this to plan and track multi-step work like research, design, and implementation.",
+		description: "Track a plan and its progress: create, update, list, get, delete (tombstone), clear (reset all), or import a handoff into an empty list.",
 		promptSnippet: guidance.promptSnippet ?? DEFAULT_PROMPT_SNIPPET,
 		promptGuidelines: guidance.promptGuidelines ?? DEFAULT_PROMPT_GUIDELINES,
 		parameters: TodoParamsSchema,

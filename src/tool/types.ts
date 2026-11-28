@@ -151,135 +151,57 @@ export interface TaskMutationParams {
 }
 
 // ---------------------------------------------------------------------------
-// TypeBox parameter schema — every `description` doubles as LLM-facing prompt
-// copy. Field order and wording are pinned by registration tests.
+// TypeBox parameter schema. Descriptions are prompt text: document shared
+// fields once, on the top-level property rather than in each batch item.
 // ---------------------------------------------------------------------------
 
-const PointsSchema = (description: string) =>
-	Type.Number({ minimum: POINTS_MIN, maximum: POINTS_MAX, description });
-
-const AnchorSchema = (description: string) => Type.String({ minLength: 1, description });
-
-const EvidenceInputSchema = Type.Object({
-	ref: Type.Optional(Type.String({ minLength: 1, maxLength: 64, pattern: "^\\S*$", description: "Run or child:<id>" })),
-	command: Type.String({ minLength: 1, description: "The check that ran, e.g. 'npm test -- replay'" }),
-	sha: Type.Optional(Type.String({ description: "Revision the check ran on, e.g. a git commit SHA" })),
-	result: StringEnum(["pass", "fail"] as const, { description: "How the run ended" }),
-	at: Type.Optional(Type.String({ description: "ISO 8601 time of the run. Default: now" })),
-});
-
-const EvidenceSchema = (description: string) => Type.Array(EvidenceInputSchema, { description });
-
-const WAITS_ON_TEXT =
-	"What this task waits on (a person, CI, a train to end); it shows ⏸, and close and stale reminders leave the task alone while it waits. Completing or deleting the task clears it; to end a wait early, clear both waitsOn and until";
-const UNTIL_TEXT = "ISO 8601 time the task waits until, e.g. 2027-01-15T09:00:00+08:00; once it passes, an until-only wait ends";
+const PointsSchema = Type.Number({ minimum: POINTS_MIN, maximum: POINTS_MAX });
+const AnchorSchema = Type.String({ minLength: 1 });
+const EvidenceSchema = Type.Array(Type.Object({
+	ref: Type.Optional(Type.String({ minLength: 1, maxLength: 64, pattern: "^\\S*$" })),
+	command: Type.String({ minLength: 1 }),
+	sha: Type.Optional(Type.String()),
+	result: StringEnum(["pass", "fail"] as const),
+	at: Type.Optional(Type.String()),
+}));
 
 const CreateTaskInputSchema = Type.Object({
-	subject: Type.String({ description: "Task subject line" }),
-	description: Type.Optional(Type.String({ description: "Long-form task description" })),
-	activeForm: Type.Optional(
-		Type.String({
-			description: "Present-continuous spinner label shown while status is in_progress (e.g. 'writing tests')",
-		}),
-	),
-	blockedBy: Type.Optional(
-		Type.Array(Type.Number(), {
-			description:
-				"Existing task ids this item waits on. Cannot name another item in this same batch; create the prerequisite first, then the dependent with blockedBy.",
-		}),
-	),
-	owner: Type.Optional(Type.String({ description: "Agent/owner assigned to this task" })),
-	metadata: Type.Optional(
-		Type.Record(Type.String(), Type.Unknown(), {
-			description: "Arbitrary metadata",
-		}),
-	),
-	points: Type.Optional(PointsSchema("Effort points, 0 to 10")),
-	anchor: Type.Optional(AnchorSchema("The check that shows this task is done, e.g. a test command")),
+	subject: Type.String(),
+	description: Type.Optional(Type.String()),
+	activeForm: Type.Optional(Type.String()),
+	blockedBy: Type.Optional(Type.Array(Type.Number())),
+	owner: Type.Optional(Type.String()),
+	metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+	points: Type.Optional(PointsSchema),
+	anchor: Type.Optional(AnchorSchema),
 	graph: Type.Optional(Type.String()),
-	evidence: Type.Optional(EvidenceSchema("Check runs already recorded for this task")),
-	waitsOn: Type.Optional(Type.String({ minLength: 1, description: WAITS_ON_TEXT })),
-	until: Type.Optional(Type.String({ description: UNTIL_TEXT })),
+	evidence: Type.Optional(EvidenceSchema),
+	waitsOn: Type.Optional(Type.String({ minLength: 1 })),
+	until: Type.Optional(Type.String()),
 });
 
 export const TodoParamsSchema = Type.Object({
 	action: StringEnum(["create", "update", "list", "get", "delete", "clear", "import"] as const),
-	path: Type.Optional(Type.String({ description: "Snapshot file (import only); relative to the session cwd" })),
-	session: Type.Optional(Type.String({ description: "Or a session id, id prefix, or .jsonl (import only)" })),
-	subject: Type.Optional(
-		Type.String({
-			description: "Task subject line (required for create unless tasks[] is set)",
-		}),
-	),
-	description: Type.Optional(Type.String({ description: "Long-form task description" })),
-	activeForm: Type.Optional(
-		Type.String({
-			description: "Present-continuous spinner label shown while status is in_progress (e.g. 'writing tests')",
-		}),
-	),
-	status: Type.Optional(
-		StringEnum(["pending", "in_progress", "completed", "deleted"] as const, {
-			description:
-				"Set this task's status (update): one of pending, in_progress, completed, deleted. When action is list, filters returned tasks by this status.",
-		}),
-	),
-	blockedBy: Type.Optional(
-		Type.Array(Type.Number(), {
-			description: "Initial blockedBy ids (create only)",
-		}),
-	),
-	addBlockedBy: Type.Optional(
-		Type.Array(Type.Number(), {
-			description: "Task ids to add to blockedBy (update only, additive merge)",
-		}),
-	),
-	removeBlockedBy: Type.Optional(
-		Type.Array(Type.Number(), {
-			description: "Task ids to remove from blockedBy (update only, additive merge)",
-		}),
-	),
-	owner: Type.Optional(Type.String({ description: "Agent/owner assigned to this task" })),
-	metadata: Type.Optional(
-		Type.Record(Type.String(), Type.Unknown(), {
-			description: "Arbitrary metadata; pass null value for a key to delete that key on update",
-		}),
-	),
-	points: Type.Optional(PointsSchema("Effort points, 0 to 10 (create or update; update replaces)")),
-	anchor: Type.Optional(
-		AnchorSchema(
-			"The check that shows this task is done, e.g. a test command (create or update; update replaces)",
-		),
-	),
-	graph: Type.Optional(
-		Type.Union([Type.String(), Type.Null()], {
-			description: "single-loop, fan-out/fan-in, or orchestrator-worker; null clears",
-		}),
-	),
-	evidence: Type.Optional(
-		EvidenceSchema(
-			"Check runs to record: the initial list on create; on update, appended to the task's evidence (never replaced or removed)",
-		),
-	),
-	waitsOn: Type.Optional(
-		Type.Union([Type.String({ minLength: 1 }), Type.Null()], { description: `${WAITS_ON_TEXT}; null clears (update)` }),
-	),
-	until: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: `${UNTIL_TEXT}; null clears (update)` })),
-	id: Type.Optional(
-		Type.Number({
-			description: "Task id (required for update, get, delete)",
-		}),
-	),
-	includeDeleted: Type.Optional(
-		Type.Boolean({
-			description: "If true, list action returns deleted (tombstoned) tasks as well. Default: false.",
-		}),
-	),
-	tasks: Type.Optional(
-		Type.Array(CreateTaskInputSchema, {
-			description:
-				"Batch create: independent tasks in one call, one-of with subject. The whole list is validated then committed together. Items cannot blockedBy each other; create the prerequisite first, then the dependent with blockedBy.",
-		}),
-	),
+	path: Type.Optional(Type.String({ description: "Import snapshot, cwd-relative." })),
+	session: Type.Optional(Type.String({ description: "Import alternative: session ID, unique prefix or .jsonl." })),
+	subject: Type.Optional(Type.String({ description: "Short imperative title (create, unless tasks is set)." })),
+	description: Type.Optional(Type.String({ description: "Long-form detail." })),
+	activeForm: Type.Optional(Type.String({ description: "Present-continuous in_progress label, e.g. 'writing tests'." })),
+	status: Type.Optional(StringEnum(["pending", "in_progress", "completed", "deleted"] as const, { description: "Set on update; filter on list." })),
+	blockedBy: Type.Optional(Type.Array(Type.Number(), { description: "Existing prerequisite IDs (create)." })),
+	addBlockedBy: Type.Optional(Type.Array(Type.Number(), { description: "Update: add prerequisite IDs." })),
+	removeBlockedBy: Type.Optional(Type.Array(Type.Number(), { description: "Update: drop prerequisite IDs." })),
+	owner: Type.Optional(Type.String()),
+	metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { description: "Update: null drops that key." })),
+	points: Type.Optional({ ...PointsSchema, description: "Effort; update replaces." }),
+	anchor: Type.Optional({ ...AnchorSchema, description: "Completion check, e.g. test command; update replaces." }),
+	graph: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "single-loop, fan-out/fan-in or orchestrator-worker; null clears." })),
+	evidence: Type.Optional({ ...EvidenceSchema, description: "Check runs: update only appends. ref: run or child:<id>; sha: tested revision; at: ISO 8601 (default now)." }),
+	waitsOn: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Null()], { description: "What is pending. Wait shows ⏸, suppresses close/stale reminders; complete/delete clears it. null clears on update." })),
+	until: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "ISO 8601 deadline; an until-only wait ends then. null clears on update." })),
+	id: Type.Optional(Type.Number({ description: "Required for update/get/delete." })),
+	includeDeleted: Type.Optional(Type.Boolean({ description: "list: include tombstones (default false)." })),
+	tasks: Type.Optional(Type.Array(CreateTaskInputSchema, { description: "Atomic batch create instead of subject; same fields, no dependencies within the batch." })),
 });
 
 export type TodoParams = Static<typeof TodoParamsSchema>;

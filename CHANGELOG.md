@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.2
+
+- Shortened `todo`'s instructions by describing each option once. Task actions, validation and saved snapshots are unchanged.
+
 ## 0.8.1
 
 - Over the row budget, the panel ranks the rows: task rows in progress, then their live run rows, then the `Other workers` group, then open and completed tasks with no live run. A long list no longer pushes every worker off the panel: run rows stay under their todos and are claimed, so the host's Subagents box lists only the rest. Both views use the ranking; rows keep their tree or list order.
