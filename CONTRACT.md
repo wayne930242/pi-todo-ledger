@@ -197,7 +197,7 @@ This namespace needs no new status, schema field, or contract version.
 
 ### Run spend (`metadata.herdr.spend`)
 
-Since 0.9.0, when a bound run ends, the ledger records what it spent on its task.
+Since 0.10.0, when a bound run ends, the ledger records what it spent on its task.
 A run's end arrives two ways:
 
 - the host's event `subagent:run-end` on `pi.events`, `{ v: 1, id, kind, name?, item?, sessionFile?, elapsed?, attempts? }`: `id` is the run id the launch acknowledged (`details.id`), `kind` is `"result"` or `"ping"`, `elapsed` the run's wall time in seconds, and `attempts` every spawned attempt of the run in order, `{ model?, sessionFile?, elapsed }`, a fallback's failed ones included. Only `v`, `id`, and `kind` are required: a run that failed before it wrote a session file ends without `sessionFile` and counts its time, and the ledger never reads `name` or an attempt's `model`. The host sends it as it delivers the end, so an end still counts when its message never reaches the model (a steer cleared before the turn);
