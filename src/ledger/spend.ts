@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { sanitizeTerminalText } from "../tool/sanitize.ts";
 
@@ -10,9 +11,19 @@ export const SPEND_SESSIONS = 12, SPEND_MODELS = 8;
 const COUNTS = ["input", "output", "cacheRead", "cacheWrite", "tokens", "cost"] as const;
 type Counts = Record<(typeof COUNTS)[number], number>;
 export interface SessionSpend extends Counts { session: string; models: string[] }
-export interface Spend extends Counts { ms: number; runs: number; models: string[]; sessions: SessionSpend[]; /** Run ids whose end is counted, newest last: the host's event and its message name the same run, and it counts once. */ ended?: string[] }
-/** Run ids kept for the count-once rule. */
-export const SPEND_ENDED = 24;
+/**
+ * One run counted by one half of its end (the host's `event` or its `message`) while the other half may still come: both name the run id, and it counts once. Both halves
+ * belong to one pi process (the host emits the event as it sends the message, and a queued message dies with its process), so `proc` names the process that counted it.
+ */
+export interface EndProof { id: string; by: "event" | "message"; proc: string }
+export interface Spend extends Counts { ms: number; runs: number; models: string[]; sessions: SessionSpend[]; /** Runs counted whose other half may still come, oldest first. */ ended?: EndProof[] }
+
+/** This pi process: one id for every load of the extension in it (a `/reload` keeps the queued messages, so it keeps the id). */
+export const PROC: string = ((globalThis as Record<symbol, string | undefined>)[Symbol.for("pi-todo-ledger/process")] ??= randomUUID());
+/** Run ids whose both halves came in this process: their proof is dropped at the todo's next write. Process-wide, so a `/reload` keeps it. */
+export const SETTLED: Set<string> = ((globalThis as Record<symbol, Set<string> | undefined>)[Symbol.for("pi-todo-ledger/settled-ends")] ??= new Set());
+/** The proofs that can still meet their other half: this process's, not yet settled. */
+const live = (proofs: readonly EndProof[]) => proofs.filter((p) => p.proc === PROC && !SETTLED.has(p.id));
 
 const count = (x: unknown) => (typeof x === "number" && Number.isFinite(x) && x >= 0 ? x : 0);
 const zero = (): Counts => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, tokens: 0, cost: 0 });
@@ -22,7 +33,7 @@ const names = (x: unknown) => (Array.isArray(x) ? x.filter(nonblank) : []);
 export function spendOf(value: unknown): Spend {
 	const v = record(value) ? value : {};
 	const sessions = (Array.isArray(v.sessions) ? v.sessions : []).flatMap((s): SessionSpend[] => (record(s) && nonblank(s.session) ? [{ session: s.session, ...Object.fromEntries(COUNTS.map((k) => [k, count(s[k])])) as Counts, models: names(s.models) }] : []));
-	const ended = names(v.ended);
+	const ended = (Array.isArray(v.ended) ? v.ended : []).flatMap((p): EndProof[] => (record(p) && nonblank(p.id) && (p.by === "event" || p.by === "message") && nonblank(p.proc) ? [{ id: p.id, by: p.by, proc: p.proc }] : []));
 	return { ...Object.fromEntries(COUNTS.map((k) => [k, count(v[k])])) as Counts, ms: count(v.ms), runs: count(v.runs), models: names(v.models), sessions, ...(ended.length ? { ended } : {}) };
 }
 
@@ -64,9 +75,11 @@ export interface FileSpend { counts: Counts; models: string[] }
  * `previous` with one ended run added: each of its session files' figures replaced by that file's total (a fallback run has a file per attempt, a resume continues
  * one), `seconds` of wall time added, and its run id (`run`), when the host names one, kept. A file that could not be read (`undefined`) adds no tokens.
  */
-export function addRun(previous: unknown, files: ReadonlyArray<{ session: string; spend: FileSpend | undefined }>, seconds: number | undefined, run?: string): Spend {
+export function addRun(previous: unknown, files: ReadonlyArray<{ session: string; spend: FileSpend | undefined }>, seconds: number | undefined, proof?: EndProof): Spend {
 	const s = spendOf(previous), out: Spend = { ...s, ms: s.ms + (seconds === undefined ? 0 : Math.round(seconds * 1000)), runs: s.runs + 1, models: [...s.models], sessions: [...s.sessions] };
-	if (run) out.ended = [...(s.ended ?? []).filter((x) => x !== run), run].slice(-SPEND_ENDED);
+	const ended = [...live(s.ended ?? []).filter((p) => p.id !== proof?.id), ...(proof ? [proof] : [])];
+	if (ended.length) out.ended = ended;
+	else delete out.ended;
 	for (const { session, spend: file } of files) {
 		if (!file) continue;
 		const at = out.sessions.findIndex((x) => x.session === session), before = at < 0 ? zero() : out.sessions[at]!;

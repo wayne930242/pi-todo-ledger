@@ -6,7 +6,7 @@ import { sanitizeTerminalText } from "../tool/sanitize.ts";
 import type { FinishCall } from "./finish-call.ts";
 import { runningGuard } from "./guards.ts";
 
-import { bindRun, history } from "./herdr-runs.ts";
+import { bindRun, history, runOfPath } from "./herdr-runs.ts";
 
 const uid = /^t_[a-z2-7]{10}$/;
 const local = /^([a-f0-9]{8})#([1-9]\d*)$/i;
@@ -63,7 +63,7 @@ export function registerHerdrOwner(pi: ExtensionAPI, finish: FinishCall) {
 			return await withSessionLock(session, async () => {
 				const before = getState(session);
 				if (pinned && !pinned.uid && listGeneration(session) !== pinned.generation) return;
-				const matches = resume ? before.tasks.filter(t => t.status !== 'deleted' && history(t.metadata?.herdr).runs.some(r => r.session === path)) : [];
+				const matches = resume ? before.tasks.filter(t => t.status !== 'deleted' && history(t.metadata?.herdr).runs.some(r => runOfPath(r, path as string))) : [];
 				if (resume && matches.length !== 1) return;
 				const task = resume ? matches[0] : pinned && !pinned.uid
 					? before.tasks.find(t => t.id === pinned.id && !t.uid)

@@ -292,3 +292,61 @@ test("a run-end event with only v, id and kind (a failed run without a session f
 	assert.equal(spendOf(h)?.ms, 63_000);
 	assert.equal(spendOf(h)?.tokens, 0);
 });
+
+test("a resume of the file a fallback ended on is the same todo's: its spend is counted (F012)", async () => {
+	const h = load({ sessionId: "a1a50001-parent" });
+	await h.fire("session_start");
+	await h.call({ action: "create", subject: "A" });
+	const uid = task(h).uid as string;
+	const first = child("fb-a", [turn("one", usage(100, 10, 0.1))]), last = child("fb-b", [turn("two", usage(20, 2, 0.02))]);
+	await launch(h, uid, "run-1", first);
+	const attempts = [{ sessionFile: first, elapsed: 4 }, { sessionFile: last, elapsed: 6 }];
+	h.emit("subagent:run-end", { v: 1, id: "run-1", kind: "result", item: uid, sessionFile: last, elapsed: 6, attempts });
+	assert.equal(spendOf(h)?.tokens, 132);
+	// The result names the final file; the caller resumes it.
+	await h.fire("tool_result", { toolName: "subagent_resume", toolCallId: "resume", input: { sessionPath: last }, details: { status: "started", id: "run-2", name: "api-worker", sessionPath: last }, content: [] });
+	appendFileSync(last, `${turn("two", usage(300, 30, 0.3))}\n`);
+	h.emit("subagent:run-end", { v: 1, id: "run-2", kind: "result", sessionFile: last, elapsed: 9, attempts: [{ sessionFile: last, elapsed: 9 }] });
+	const s = spendOf(h)!;
+	assert.equal(s.runs, 2, "the resume ended on the todo");
+	assert.equal(s.tokens, 132 + 330);
+	assert.equal(s.ms, 19_000);
+});
+
+test("a message that comes after many other ends of its todo still counts nothing twice: the proof waits for it (F014)", async () => {
+	const h = load({ sessionId: "de0d0001-parent" });
+	await h.fire("session_start");
+	await h.call({ action: "create", subject: "A" });
+	const uid = task(h).uid as string, file = child("late", [turn("m", usage(10, 10, 0.02))]);
+	await launch(h, uid, "run-0", file);
+	h.emit("subagent:run-end", { v: 1, id: "run-0", kind: "result", item: uid, sessionFile: file, elapsed: 1 });
+	for (let i = 1; i <= 30; i++) {
+		const f = child(`late-${i}`, [turn("m", usage(1, 1, 0.01))]);
+		await launch(h, uid, `run-${i}`, f);
+		h.emit("subagent:run-end", { v: 1, id: `run-${i}`, kind: "result", item: uid, sessionFile: f, elapsed: 1 });
+		await ended(h, { id: `run-${i}`, name: "api-worker", item: uid, sessionFile: f, exitCode: 0, elapsed: 1 });
+	}
+	const before = spendOf(h)!;
+	assert.equal(before.runs, 31);
+	await ended(h, { id: "run-0", name: "api-worker", item: uid, sessionFile: file, exitCode: 0, elapsed: 1 });
+	const after = spendOf(h)!;
+	assert.equal(after.runs, 31, "the late message adds no run");
+	assert.equal(after.ms, before.ms);
+	assert.equal(after.tokens, before.tokens);
+});
+
+test("a run's proof leaves once both halves came, and one another pi process left is dropped at the next write", async () => {
+	const h = load({ sessionId: "de0d0002-parent" });
+	await h.fire("session_start");
+	const stale = { tokens: 0, cost: 0, ms: 0, runs: 1, ended: [{ id: "old-run", by: "event", proc: "another-process" }] };
+	await h.call({ action: "create", subject: "A", metadata: { herdr: { spend: stale } } });
+	const uid = task(h).uid as string, a = child("both-a", [turn("m", usage(1, 1, 0.01))]), b = child("both-b", [turn("m", usage(1, 1, 0.01))]);
+	await launch(h, uid, "run-a", a);
+	h.emit("subagent:run-end", { v: 1, id: "run-a", kind: "result", item: uid, sessionFile: a, elapsed: 1 });
+	assert.deepEqual((spendOf(h)!.ended as { id: string }[]).map((p) => p.id), ["run-a"], "the other process's proof is gone");
+	await ended(h, { id: "run-a", name: "api-worker", item: uid, sessionFile: a, exitCode: 0, elapsed: 1 });
+	await launch(h, uid, "run-b", b);
+	h.emit("subagent:run-end", { v: 1, id: "run-b", kind: "result", item: uid, sessionFile: b, elapsed: 1 });
+	assert.deepEqual((spendOf(h)!.ended as { id: string }[]).map((p) => p.id), ["run-b"], "run-a's message came: its proof is gone");
+	assert.equal(spendOf(h)!.runs, 3);
+});

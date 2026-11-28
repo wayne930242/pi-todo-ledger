@@ -3,7 +3,10 @@
 ## 0.10.0
 
 - When a bound subagent's run ends, the ledger records what it spent on its todo in `metadata.herdr.spend`: tokens, cost, wall time, runs, and models, summed over every run of the todo. A resume of the same session replaces that session's figures instead of counting them twice; a forked child's copy of its launcher's turns is not counted; an end is tied only to the todo its launch bound; the host's `subagent:run-end` event counts an end the model never read, once by its run id. A run with fallback models counts every spawned attempt (`attempts` on its end), the failed ones too. `todo get` shows a `spend:` line. The figures are an estimate from the child's transcript, not a bill. See [CONTRACT.md](CONTRACT.md#run-spend-metadataherdrspend).
-- The spend write is synchronous: it reads the list from the branch pi is on at that moment and appends in the same tick, so it never lands on a branch the session switched to. It waits only behind a `todo` call of the session already running or queued, and does not ask change guards, which are awaited.
+- A fallback's final session file is recorded on its run (`metadata.herdr.runs[].also`), so a resume of the file the result names binds to the same todo and counts there.
+- The event and the message of one run count once however many other runs of the todo end in between: the ledger keeps a proof of a half-counted run until its other half comes, or its pi process ends.
+- Known limit: when Maestro fails to read a resumed run's summary as it delivers the end, it sends neither the message nor the host's event, and that end is not counted.
+- The spend write is synchronous: it reads the list from the branch pi is on at that moment and appends in the same tick, so it never lands on a branch the session switched to. It waits only behind a `todo` call of the session already running or queued, and does not ask change guards, which are awaited: a spend write changes only `metadata.herdr` and records a run that already happened.
 
 ## 0.9.0
 

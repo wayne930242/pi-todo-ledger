@@ -183,7 +183,7 @@ A match issues a normal guarded `update`: `owner` becomes the full `details.name
 `pane` is the acknowledged `details.worktree.paneId` and is absent for ordinary launches.
 The top-level fields always describe the latest assignment. An old pane id does not carry forward. For example, after a reviewer joins a worker on the same task, `owner` and `metadata.herdr.id` identify the reviewer.
 
-New writers also store `metadata.herdr.runs`: up to six `{ name, id, pane?, session?, agent? }` records, unique by run id, newest last. `session` is the launch acknowledgement's `sessionFile`. Once the list exceeds six, `metadata.herdr.older` counts the discarded records. An earlier v1 record without `runs` counts as one binding. A reader that finds a repeated run id (in imported or hand-edited metadata) keeps that id's last record in its last position, then applies the cap of six, so the next write is unique again. The snapshot version remains 1.
+New writers also store `metadata.herdr.runs`: up to six `{ name, id, pane?, session?, agent?, also? }` records, unique by run id, newest last. `session` is the launch acknowledgement's `sessionFile`. `also` lists the session files the run ended on besides its own ([Run spend](#run-spend-metadataherdrspend)); a resume of any of them binds as one of `session` does. Once the list exceeds six, `metadata.herdr.older` counts the discarded records. An earlier v1 record without `runs` counts as one binding. A reader that finds a repeated run id (in imported or hand-edited metadata) keeps that id's last record in its last position, then applies the cap of six, so the next write is unique again. The snapshot version remains 1.
 
 A successful `subagent_resume` appends its new run id when its acknowledged `sessionPath` matches a retained session path on exactly one non-deleted task in the calling session. An unknown or ambiguous path binds nothing.
 Other metadata stays intact; a refusal leaves the launch successful but adds the reason to its response.
@@ -213,13 +213,14 @@ Then it writes `metadata.herdr.spend` as an `update` of that task, keeping every
 ```json
 {
   "input": 1500, "output": 300, "cacheRead": 3000, "cacheWrite": 0, "tokens": 4800, "cost": 0.75,
-  "ms": 125000, "runs": 1, "models": ["anthropic/claude-opus-5-5"], "ended": ["0accb6d1-4380-4d51-a6d7-81dd0408d82f"],
+  "ms": 125000, "runs": 1, "models": ["anthropic/claude-opus-5-5"], "ended": [{ "id": "0accb6d1-4380-4d51-a6d7-81dd0408d82f", "by": "event", "proc": "5f0c…" }],
   "sessions": [{ "session": "/path/child.jsonl", "input": 1500, "output": 300, "cacheRead": 3000, "cacheWrite": 0, "tokens": 4800, "cost": 0.75, "models": ["anthropic/claude-opus-5-5"] }]
 }
 ```
 
 The top-level figures are the task's totals over all its runs: `tokens` is pi's `totalTokens`, `cost` its `cost.total` in US dollars, `ms` the sum of the ends' wall time (an end with `attempts` adds its attempts' `elapsed`, else its own), `runs` the number of ended runs (results and pings), and `models` the `provider/model` ids seen, first seen first, at most eight.
-`ended` keeps the last 24 run ids counted, so the event and the message of one run count once.
+`ended` holds a proof for each run counted by one half of its end (`by`: `"event"` or `"message"`) while the other half may still come, so the event and the message of one run count once however many other runs end in between. Both halves belong to the pi process that sent them (`proc`): the host emits the event as it sends the message, and a queued message is lost with its process. A proof leaves at the task's next write once its other half came, or when it was left by another process; a message cleared before the model read it leaves its proof until its process ends.
+When an end tied to its launch by its run id names a final session file other than the launch's (a fallback's last attempt), the ledger adds that file to the bound run's `also` in `metadata.herdr.runs` (at most four), so a `subagent_resume` of it binds to the same task and its spend is counted there.
 A resume continues the same session file, so the ledger replaces that session's figures with the file's new total instead of adding them again; `sessions` keeps up to twelve, newest last, and an older one stays in the totals but is no longer told apart.
 A file that cannot be read adds the run and its time, not tokens.
 A later launch keeps `spend` when it rebinds `metadata.herdr`.
@@ -227,7 +228,7 @@ A later launch keeps `spend` when it rebinds `metadata.herdr`.
 The write is synchronous: in one tick it reads the list from the branch pi is on (its newest `todo/v1` snapshot, not the in-memory list, which a `session_tree` replay still to run may hold from the branch before), reads the files, and appends the snapshot.
 No branch switch, replay, or shutdown can come between the read and the append, so the write lands on the branch pi is on, with that branch's tasks: a branch that does not hold the bound task records nothing.
 A `todo` call of the session that is running or queued holds the list while its guards run; the write then waits its turn in the session's queue and does the same there, and one queued before `session_shutdown` is dropped.
-Namespace validators judge the write as any `update`; change guards (see [Change guards](#4-change-guards)) are not asked, since they are awaited. A validator's refusal leaves the list unchanged and appends `Todo spend: <reason>` to the message.
+Namespace validators judge the write as any `update`; change guards (see [Change guards](#4-change-guards)) are not asked: they are awaited, and the write records a run that already happened (the boss's decision, 2026-11-28: 「不經過關卡」). A guard such as Straw Boss's train guard therefore never sees or refuses a spend write, which changes only `metadata.herdr`. A validator's refusal leaves the list unchanged and appends `Todo spend: <reason>` to the message.
 The figures are an estimate from what pi wrote in the child's transcript, bookkeeping rather than a bill. `get` shows them on a `spend:` line.
 
 ## 4. Change guards

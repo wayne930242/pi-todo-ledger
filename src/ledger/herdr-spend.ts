@@ -4,10 +4,11 @@ import { sessionBusy, withSessionLock } from "../state/session-lock.ts";
 import { listGeneration, sid } from "../state/store.ts";
 import { sanitizeTerminalText } from "../tool/sanitize.ts";
 import type { Task } from "../tool/types.ts";
+import type { BoundRun } from "./herdr-runs.ts";
 import type { CommitNow } from "./finish-call.ts";
 import { runningGuard } from "./guards.ts";
-import { history } from "./herdr-runs.ts";
-import { addRun, fileSpend, nonblank, record, spendOf } from "./spend.ts";
+import { aliasRun, history, runOfPath } from "./herdr-runs.ts";
+import { addRun, fileSpend, nonblank, PROC, record, SETTLED, spendOf } from "./spend.ts";
 
 // A run's spend on its todo (CONTRACT.md "Run spend"). A run's end comes two ways: the host's `subagent:run-end` event, sent as the host delivers the end whether or not the model
 // ever reads it, and the `subagent_result` or `subagent_ping` message the launching session's model receives. Both name the run's id, by which it counts once, and its session files:
@@ -51,7 +52,7 @@ const timeOf = (end: End): number | undefined => (end.attempts?.some((a) => a.el
  */
 function taskOf(tasks: readonly Task[], end: End): Task | undefined {
 	const open = tasks.filter((t) => t.status !== "deleted"), files = new Set([...(end.file ? [end.file] : []), ...filesOf(end)]);
-	for (const match of [end.run && ((r: { id: string }) => r.id === end.run), files.size > 0 && ((r: { session?: string }) => r.session !== undefined && files.has(r.session))]) {
+	for (const match of [end.run && ((r: { id: string }) => r.id === end.run), files.size > 0 && ((r: BoundRun) => [...files].some((f) => runOfPath(r, f)))]) {
 		if (!match) continue;
 		const bound = open.filter((t) => history(t.metadata?.herdr).runs.some(match));
 		if (bound.length === 1) return bound[0];
@@ -79,25 +80,30 @@ export function registerHerdrSpend(pi: ExtensionAPI, commit: CommitNow) {
 		try { const s = sid(ctx); shutdowns.set(s, (shutdowns.get(s) ?? 0) + 1); } catch { /* a stale context: its session is gone with it */ }
 	});
 
-	/** Records one end in this tick; a reason when it could not, undefined when it did or when the end is not this list's. */
-	const book = (ctx: ExtensionContext, end: End): string | undefined => {
+	/** Records one end in this tick, by one half of it (`by`); a reason when it could not, undefined when it did or when the end is not this list's. */
+	const book = (ctx: ExtensionContext, end: End, by: "event" | "message"): string | undefined => {
 		const session = sid(ctx);
 		if (listGeneration(session) === undefined) return undefined; // shut down: its list is gone, and no write may rebuild it
 		const before = listOnBranch(ctx), task = taskOf(before.tasks, end);
 		if (!task) return undefined;
 		const herdr = record(task.metadata?.herdr) ? task.metadata.herdr : {};
-		if (end.run && spendOf(herdr.spend).ended?.includes(end.run)) return undefined;
+		// The other half of a run already counted: it counts nothing, and the proof goes at the todo's next write.
+		const proof = end.run ? spendOf(herdr.spend).ended?.find((p) => p.id === end.run) : undefined;
+		if (proof) { if (proof.by !== by) SETTLED.add(proof.id); return undefined; }
 		const parent = parentIds(ctx), files = filesOf(end).map((session) => ({ session, spend: fileSpend(session, parent) }));
-		const spend = addRun(herdr.spend, files, timeOf(end), end.run);
-		return commit(session, { action: "update", id: task.id, metadata: { herdr: { ...herdr, spend } } }, before);
+		const spend = addRun(herdr.spend, files, timeOf(end), end.run ? { id: end.run, by, proc: PROC } : undefined);
+		// A fallback ends on another file than its launch's: record it on the run its id names, so a resume of that file is this todo's (review F012).
+		const last = end.attempts?.findLast((a) => a.file)?.file ?? end.file;
+		const bound = end.run && last ? aliasRun(herdr, end.run, last) : herdr;
+		return commit(session, { action: "update", id: task.id, metadata: { herdr: { ...bound, spend } } }, before);
 	};
 	/** `book` now, or, behind a running or queued call of the session, when its turn comes. */
-	const recordEnd = (ctx: ExtensionContext, end: End): string | undefined | Promise<string | undefined> => {
+	const recordEnd = (ctx: ExtensionContext, end: End, by: "event" | "message"): string | undefined | Promise<string | undefined> => {
 		const session = sid(ctx);
 		if (runningGuard(session)) return "cannot update the list from its own change guard";
-		if (!sessionBusy(session)) return book(ctx, end);
+		if (!sessionBusy(session)) return book(ctx, end, by);
 		const epoch = shutdowns.get(session) ?? 0;
-		return withSessionLock(session, async () => ((shutdowns.get(session) ?? 0) === epoch ? book(ctx, end) : undefined));
+		return withSessionLock(session, async () => ((shutdowns.get(session) ?? 0) === epoch ? book(ctx, end, by) : undefined));
 	};
 
 	// The host's event: an end the model may never read (a steer cleared before its turn) is still spent. A refusal here is said again by the message, when it comes.
@@ -105,7 +111,7 @@ export function registerHerdrSpend(pi: ExtensionAPI, commit: CommitNow) {
 		const ctx = current;
 		if (!ctx || !record(raw) || raw.v !== 1 || !nonblank(raw.id) || (raw.kind !== "result" && raw.kind !== "ping")) return;
 		try {
-			void Promise.resolve(recordEnd(ctx, endOf(raw))).catch(() => undefined); // a stale context (the session was replaced): its next session replays its own list
+			void Promise.resolve(recordEnd(ctx, endOf(raw), "event")).catch(() => undefined); // a stale context (the session was replaced): its next session replays its own list
 		} catch { /* the same, thrown in this tick */ }
 	});
 
@@ -118,7 +124,7 @@ export function registerHerdrSpend(pi: ExtensionAPI, commit: CommitNow) {
 			return { message: { ...message, content } as typeof event.message };
 		};
 		try {
-			const why = await recordEnd(ctx, endOf(message.details));
+			const why = await recordEnd(ctx, endOf(message.details), "message");
 			return why ? say(why) : undefined;
 		} catch (error) {
 			return say(error instanceof Error ? error.message : String(error));
