@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.9.0
 
 - With pi-straw-boss loaded, the panel shows the merge-train cars the session sent, under the todo whose ticket they carry (`🚂 1128c ▰▰▰▱▱▱▱ merge 12m · 等 1128b`), and the questions it asked that wait on you, under the todo they block (`⏸ 等你：要不要連同 ws04 一起部署？ 4m`). A car or question with no todo goes in a group: `其他車廂` / `Other cars`, `火車` / `Trains`, or `等你` / `Waiting on you`. They come from sb's `straw-boss:car-rows:v1` and `straw-boss:ask-rows:v1` probes; without sb nothing of them shows.
 - A question goes under its todo only by the uid sb bound it with, so a todo that takes its id after `clear` is not marked blocked; a car's `<session8>#<id>` must carry this session's own prefix. An sb that sends neither the uid nor its session puts the row in its group. A compact row cuts a long question before its `+N`, never the count.
 - They rank with the run rows under the row budget, and in compact mode share their todo's row, a question waiting on you first. The collapsed row counts the questions waiting on you. The panel looks for changes every 5 seconds, so a question shows while its dialog waits.
+- Placing questions, and cars by `<session8>#<id>`, needs pi-straw-boss 0.116.2 or later, whose probes name their session. With an older sb, questions go in `等你` and only cars placed by uid go under their todo.
 
 ## 0.8.2
 
