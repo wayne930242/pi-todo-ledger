@@ -1,6 +1,6 @@
 {
   "name": "pi-todo-ledger",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "description": "A todo list for pi agents with a public bookkeeping contract: snapshot entries, change events, and namespace validators. Fork of @juicesharp/rpiv-todo",
   "type": "module",
   "license": "MIT",

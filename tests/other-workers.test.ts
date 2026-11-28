@@ -95,7 +95,7 @@ test("unbound runs form an Other workers group after the task rows, in zh-TW", a
 		"└─ ctrl+shift+t 完整",
 		"",
 	]);
-	assert.deepEqual(colors, ["muted", "dim", "dim"], "the group is not a warning: a muted heading and dim run rows");
+	assert.deepEqual(colors, ["muted", "mdLink", "mdLink"], "a muted heading and blue names");
 	m.overlay.dispose();
 });
 
@@ -119,10 +119,10 @@ test("the group in English", async (ctx) => {
 test("a waiting run in the group keeps the bound row's mark and colour", async (ctx) => {
 	env(ctx);
 	const colors: string[] = [];
-	const look = { fg: (c: string, s: string) => { if (s.includes(" · ")) colors.push(c); return s; }, strikethrough: (s: string) => s } as Theme;
+	const look = { fg: (c: string, s: string) => { if (["? ", "asker", " · astra · ", "waiting 42s"].includes(s)) colors.push(c); return s; }, strikethrough: (s: string) => s } as Theme;
 	const m = await mount([task(1)], () => [run("asker", 600, { phase: { kind: "blocked", since: NOW - 42_000 } })], { look });
 	assert.deepEqual(m.render(), ["● Todos (0/1)", "├─ ○ t1", "├─ Other workers", "│    └ ? asker · astra · waiting 42s", "└─ ctrl+shift+t full", ""]);
-	assert.deepEqual(colors, ["warning"]);
+	assert.deepEqual(colors, ["warning", "mdLink", "dim", "warning"]);
 	m.overlay.dispose();
 });
 

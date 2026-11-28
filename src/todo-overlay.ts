@@ -41,7 +41,7 @@ import { type PlanRow, planView } from "./view/plan.ts";
 import type { Task } from "./tool/types.ts";
 
 import { history } from "./ledger/herdr-runs.ts";
-import { liveRows, runLine, runState, type Query, type RunRow } from "./view/live-runs.ts";
+import { liveRows, runLine, type Query, type RunRow } from "./view/live-runs.ts";
 
 const WIDGET_KEY = "rpiv-todos";
 
@@ -633,16 +633,12 @@ export class TodoOverlay {
 	}
 
 	/**
-	 * One run row under `branch`. A run waiting for a reply stands out; idle and
-	 * running rows stay dim, and so does the tree. Only a row shown in full is
+	 * One run row under the dim tree branch. Only a row shown in full is
 	 * claimed; a truncated one carries no marker.
 	 */
 	private drawRun(lines: string[], r: RunRow, branch: string, draw: DrawContext, frame: Frame) {
 		const { theme, width, truncate, now, evidence } = draw;
-		const line =
-			runState(r) === "waiting"
-				? theme.fg("dim", branch) + theme.fg("warning", runLine(r, now))
-				: theme.fg("dim", branch + runLine(r, now));
+		const line = theme.fg("dim", branch) + runLine(r, now, (color, text) => theme.fg(color, text));
 		const whole = visibleWidth(line) <= width;
 		frame.ticking = true;
 		if (whole && evidence === "screen") {

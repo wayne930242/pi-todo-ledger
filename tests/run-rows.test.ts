@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { stripVTControlCharacters } from "node:util";
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, Spacer, Text, TuiAltScreen } from "@earendil-works/pi-tui";
 import { setActiveRenderSession } from "../src/todo.ts";
@@ -14,7 +15,7 @@ const { createChatViewport } = (await import(
 
 const plain = { fg: (_c: string, s: string) => s, strikethrough: (s: string) => s } as Theme;
 /** Colors like a real theme, so a row is several ANSI segments. */
-const ansi = { fg: (c: string, s: string) => `\x1b[38;5;${c === "warning" ? 179 : 242}m${s}\x1b[39m`, strikethrough: (s: string) => s } as Theme;
+const ansi = { fg: (c: string, s: string) => `\x1b[38;5;${c === "warning" ? 179 : c === "mdLink" ? 111 : 242}m${s}\x1b[39m`, strikethrough: (s: string) => s } as Theme;
 const worker = (extra: Partial<RunRow> = {}): RunRow => ({
 	id: "w1", name: "deep-worker", model: "gpt-6.2-astra", agent: "worker", startedAt: Date.now() - 5000, phase: { kind: "active" }, ...extra,
 });
@@ -265,7 +266,7 @@ for (const kind of ["waiting", "blocked"]) {
 		const m = await mount({ tui: pi.tui, tasks: 3, rows: () => [worker({ phase: { kind } })], theme: ansi });
 		pi.mountWidget(m.widget);
 		const screen = await pi.frame(40);
-		assert.ok(screen.some((l) => l.includes(kind === "waiting" ? "◇ deep-worker" : "? deep-worker")));
+		assert.ok(screen.some((l) => stripVTControlCharacters(l).includes(kind === "waiting" ? "◇ deep-worker" : "? deep-worker")));
 		assert.deepEqual(m.claims().at(-1), ["w1"]);
 		m.overlay.dispose();
 	});

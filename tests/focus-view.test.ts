@@ -228,8 +228,8 @@ test("idle and waiting run rows carry a mark and a status word on their one row,
 	const idle: RunRow = { ...run("fixture-test", 600), phase: { kind: "waiting", since: NOW - 180_000 } };
 	const asking: RunRow = { ...run("x", 600), model: "gpt-6.2-sol", phase: { kind: "blocked", since: NOW - 42_000 } };
 	const tasks = [task(1, "in_progress", bound("fixture-test", "x")), task(2)];
-	const colors: string[] = [];
-	const look = { fg: (c: string, s: string) => { if (s.includes(" · ")) colors.push(c); return s; }, strikethrough: (s: string) => s } as Theme;
+	const colors: [string, string][] = [];
+	const look = { fg: (c: string, s: string) => { colors.push([c, s]); return s; }, strikethrough: (s: string) => s } as Theme;
 	const m = await mount(tasks, [idle, asking], "regular", look);
 	assert.deepEqual(m.render(), [
 		"● Todos (0/2)",
@@ -240,7 +240,10 @@ test("idle and waiting run rows carry a mark and a status word on their one row,
 		"└─ ctrl+shift+t 完整",
 		"",
 	]);
-	assert.deepEqual(colors, ["dim", "warning"], "idle is dim; waiting stands out, its tree prefix stays dim");
+	assert.deepEqual(colors.filter(([c]) => c === "mdLink"), [["mdLink", "fixture-test"], ["mdLink", "x"]]);
+	assert.deepEqual(colors.filter(([c, s]) => c === "warning" && s !== "◐"), [["warning", "? "], ["warning", "等待回覆 42s"]]);
+	for (const segment of ["│    ├ ", "│    └ ", " · astra · ", " · sol · ", "閒置 3m"])
+		assert.ok(colors.some(([c, s]) => c === "dim" && s === segment), segment);
 	m.render();
 	assert.deepEqual(m.claims, [["fixture-test", "x"]], "the status word leaves the claim intact");
 	m.overlay.dispose();

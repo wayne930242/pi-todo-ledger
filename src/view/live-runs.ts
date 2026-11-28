@@ -84,7 +84,8 @@ const words: Record<string, string> = {
 	"state.idle": "idle",
 	"state.waiting": "waiting",
 };
-export function runLine(row: RunRow, now: number) {
+type RunColor = "dim" | "warning" | "mdLink";
+export function runLine(row: RunRow, now: number, fg: (color: RunColor, text: string) => string = (_, text) => text) {
 	const { kind, label, since } = row.phase;
 	// A pending cancel outranks the lifecycle: the host hides its own warning for claimed rows.
 	const cancel = pendingCancel(row);
@@ -113,10 +114,11 @@ export function runLine(row: RunRow, now: number) {
 			: s < 3600
 				? `${Math.floor(s / 60)}m`
 				: `${Math.floor(s / 3600)}h${String(Math.floor(s / 60) % 60).padStart(2, "0")}m`;
-	return sanitizeTerminalText(
-		(state && MARKS[state] ? `${MARKS[state]} ` : "") +
-			[row.name, row.model && shortModel(row.model), `${word} ${time}`]
-				.filter(Boolean)
-				.join(" · "),
-	);
+	const color = state === "waiting" ? "warning" : "dim";
+	const mark = state && MARKS[state];
+	const name = sanitizeTerminalText(row.name);
+	const model = row.model && sanitizeTerminalText(shortModel(row.model));
+	const middle = (name ? " · " : "") + (model ? `${model} · ` : "");
+	return (mark ? fg(color, `${mark} `) : "") + (name ? fg("mdLink", name) : "") +
+		(middle ? fg("dim", middle) : "") + fg(color, sanitizeTerminalText(`${word} ${time}`));
 }
