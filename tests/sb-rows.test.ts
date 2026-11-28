@@ -3,8 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
+import { stripVTControlCharacters } from "node:util";
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
-import type { Component } from "@earendil-works/pi-tui";
+import { type Component, visibleWidth } from "@earendil-works/pi-tui";
 import { setActiveRenderSession } from "../src/todo.ts";
 import { TodoOverlay } from "../src/todo-overlay.ts";
 import type { RunRow } from "../src/view/live-runs.ts";
@@ -262,5 +263,30 @@ test("carrows-review-F003: a car's `<session8>#id` must name this session; anoth
 		} finally {
 			m.overlay.dispose();
 		}
+	}
+});
+
+test("carrows-review-F002: a compact row cuts the question, never the `+N` of the runs it claims; with no room for the count it claims nothing", async (ctx) => {
+	env(ctx, { view: "full", maxWidgetLines: 3 });
+	const long = "Should the order list ship with the new filters, or wait for the review of the column widths?";
+	const tasks = [task(1, "in_progress", { uid: "t_aaaaaaaaaa", ...bound("w") }), task(2)];
+	const sb = { asks: () => v1([ask("Q3", { subject: long, item: { session: ME, id: 1, uid: "t_aaaaaaaaaa" } })]) };
+	const m = await mount(tasks, () => [run("w")], sb, { width: 60 });
+	try {
+		const row = stripVTControlCharacters(m.render()[1]!);
+		assert.match(row, /⟶ ⏸ waits on you: .*… \+1$/, row);
+		assert.ok(visibleWidth(row) <= 60, row);
+		m.render();
+		assert.deepEqual(m.claims.at(-1), ["w"], "the run behind +1 is on the row, so it is claimed");
+	} finally {
+		m.overlay.dispose();
+	}
+	const narrow = await mount(tasks, () => [run("w")], sb, { width: 16 });
+	try {
+		narrow.render();
+		narrow.render();
+		assert.ok(!narrow.claims.some((ids) => ids.includes("w")), "a row with no room for +1 claims no run");
+	} finally {
+		narrow.overlay.dispose();
 	}
 });

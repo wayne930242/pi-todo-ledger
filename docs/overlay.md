@@ -224,7 +224,8 @@ Other workers group takes one row:
 - After ` ⟶ ` comes the most active run (working, then waiting for a reply, then
   other states, idle last; the host's order breaks ties), in the run row format,
   then `+N` for the task's other live runs.
-- A narrow row cuts the task part with `…` first, so the run stays whole.
+- A narrow row cuts the task part with `…` first, so the run stays whole. A long question or car line is cut before the `+N`,
+  which always stays; a row with no room for its `+N` claims none of its runs.
 - The ranks above still apply; runs simply cost no rows, and the group costs one.
   A task with no live run keeps its plain row.
 - A compact row painted in full claims every run it stands for, `+N` included,

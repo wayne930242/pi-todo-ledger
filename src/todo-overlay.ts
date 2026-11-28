@@ -648,14 +648,15 @@ export class TodoOverlay {
 		const { theme, width, truncate, evidence } = draw;
 		const lead = mostActive(rows);
 		const owner = lead.kind === "run" ? draw.runOwners.get(lead.run.id) : draw.owners.get(lead.key);
-		let right =
-			theme.fg("dim", " ⟶ ") +
-			(group && owner !== undefined ? `#${owner} ` : "") +
-			liveText(lead, draw, group?.kind === "ask") +
-			(rows.length > 1 ? theme.fg("dim", ` +${rows.length - 1}`) : "");
-		// sb's words can run long (a return's reason); a run row is short and stays whole to be claimed.
-		if (lead.kind !== "run" && visibleWidth(right) > width - COMPACT_MIN_LEFT)
-			right = truncateToWidth(right, Math.max(width - COMPACT_MIN_LEFT, 0), "…");
+		const head = theme.fg("dim", " ⟶ ") + (group && owner !== undefined ? `#${owner} ` : "");
+		const tail = rows.length > 1 ? theme.fg("dim", ` +${rows.length - 1}`) : "";
+		// sb's words can run long (a question, a return's reason): only they are cut, never the `+N` that stands for the runs
+		// the row claims (carrows-review-F002). A run row is short and stays whole to be claimed. With no room even for the
+		// count, nothing is cut here: the row is then cut whole below, and claims nothing.
+		let text = liveText(lead, draw, group?.kind === "ask");
+		const textRoom = width - COMPACT_MIN_LEFT - visibleWidth(head) - visibleWidth(tail);
+		if (lead.kind !== "run" && textRoom > 0 && visibleWidth(text) > textRoom) text = truncateToWidth(text, textRoom, "…");
+		const right = head + text + tail;
 		const room = width - visibleWidth(right);
 		const roomy = visibleWidth(left) <= room || room >= COMPACT_MIN_LEFT;
 		const line = roomy ? truncateToWidth(left, Math.max(room, 0), "…") + right : truncate(left + right);
