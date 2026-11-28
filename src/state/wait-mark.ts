@@ -8,8 +8,15 @@ import type { Task, TaskMutationParams } from "../tool/types.ts";
  */
 export const WAIT_KEYS = ["waitsOn", "until"] as const;
 
-/** An ISO 8601 date or date-time, the forms `metadata.until` takes. */
-export const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/i;
+/** An ISO 8601 date or date-time, the forms `metadata.until` takes; pi-straw-boss (src/todoledger.ts) reads the same. */
+const ISO_DATE_TIME = /^\d{4}-\d\d-\d\d(?:T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-](?:[01]\d|2[0-3]):?[0-5]\d)?)?$/;
+
+/** The epoch time of an `until` value, or NaN unless it is an ISO date or date-time on a real calendar day (not 2099-02-30). */
+export function untilTime(value: unknown): number {
+	if (typeof value !== "string" || !ISO_DATE_TIME.test(value)) return Number.NaN;
+	const day = value.slice(0, 10), midnight = Date.parse(day);
+	return Number.isFinite(midnight) && new Date(midnight).toISOString().startsWith(day) ? Date.parse(value) : Number.NaN;
+}
 
 /** The refusal for a call's wait fields, or `undefined`; only an update (`clearable`) takes `null`. */
 export function validateWaitFields(spec: TaskMutationParams, now: string, clearable: boolean): string | undefined {
@@ -18,10 +25,10 @@ export function validateWaitFields(spec: TaskMutationParams, now: string, cleara
 		return clearable ? "waitsOn must be a non-empty string (null clears)" : "waitsOn must be a non-empty string";
 	}
 	if (until === undefined || (clearable && until === null)) return undefined;
-	if (typeof until !== "string" || !ISO_DATE_TIME.test(until) || Number.isNaN(Date.parse(until))) {
+	if (Number.isNaN(untilTime(until))) {
 		return clearable ? "until must be an ISO 8601 date or time (null clears)" : "until must be an ISO 8601 date or time";
 	}
-	if (Date.parse(until) <= Date.parse(now)) return "until must be in the future";
+	if (untilTime(until) <= Date.parse(now)) return "until must be in the future";
 	return undefined;
 }
 
@@ -48,7 +55,6 @@ export function waitParts(task: Task): { on?: string; until?: number } {
 	if (task.status !== "pending" && task.status !== "in_progress") return {};
 	const who = task.metadata?.waitsOn;
 	const on = typeof who === "string" && who.trim() ? who : undefined;
-	const raw = task.metadata?.until;
-	const time = typeof raw === "string" && ISO_DATE_TIME.test(raw) ? Date.parse(raw) : Number.NaN;
+	const time = untilTime(task.metadata?.until);
 	return { ...(on ? { on } : {}), ...(time > Date.now() ? { until: time } : {}) };
 }

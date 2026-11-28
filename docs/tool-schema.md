@@ -106,8 +106,8 @@ these names is read with that graph; its metadata is kept as it was.
 (trimmed) and `metadata.until` (as given), the keys the panel, `/todos`, and other
 extensions read, so the snapshot keeps its v1 shape; like `graph`, their schema admits
 `null`, which on `update` removes the key. They apply after `metadata`, so they win
-over the same key passed there. `until` must be an ISO 8601 date or date-time after
-the call. Setting `status` to `completed` or `deleted`, or `delete`, removes both
+over the same key passed there. `until` must be an ISO 8601 date or date-time (`T` between them, hours 00 to 23) on a
+real calendar day, after the call; to end a wait early, clear both keys that are set. Setting `status` to `completed` or `deleted`, or `delete`, removes both
 keys, however they were written.
 
 `import` reads `{ "v": 1, "tasks": [...], "nextId": n }` from a JSON file and keeps every task field as stored.

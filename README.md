@@ -60,7 +60,8 @@ To mark a task as waiting, pass `waitsOn` with what it waits on (a person, CI, `
 They are stored as `metadata.waitsOn` and `metadata.until`, which earlier releases already read, so setting those keys directly still works.
 An open task shows `⏸` with what it waits on or the future deadline in local time.
 A wait neither schedules a wake-up nor changes the task's `status`; it tells readers such as anchorloop's close guard and sb's board that the task is held up, not forgotten.
-A wait with only `until` ends when that time passes; a `waitsOn` wait lasts until it is cleared.
+A wait with only `until` ends when that time passes; a `waitsOn` wait lasts until it is cleared, so to end a wait early clear both fields you set.
+`until` takes an ISO date or date-time with a `T` on a real calendar day, the form pi-straw-boss reads; `2099-02-30` and `2099-12-01 09:00` are refused, and such a value written straight into metadata does not mark the task as waiting.
 
 `graph` names the work graph of the plan a task belongs to, one of `single-loop`, `fan-out/fan-in`, and `orchestrator-worker`; any other value is refused.
 One session often runs several plans, so each task carries its own.

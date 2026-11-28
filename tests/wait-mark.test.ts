@@ -68,3 +68,42 @@ test("an update that sets only a wait mark is a mutation", async () => {
 	assert.notEqual(result.isError, true, text(result));
 	assert.equal(metadataOf(h)!.until, FUTURE);
 });
+
+test("until takes the date rule pi-straw-boss reads: ISO with a T, real hours, and a real calendar day", async () => {
+	const h = load();
+	await h.call({ action: "create", subject: "A" });
+	for (const until of ["2099-02-30T09:00:00Z", "2099-02-30", "2099-12-01 09:00:00Z", "2099-12-01t09:00Z", "2099-12-01T24:00Z"]) {
+		const refused = await h.call({ action: "update", id: 1, until });
+		assert.ok(text(refused).startsWith("Error: until must be an ISO 8601 date or time"), `${until}: ${text(refused)}`);
+	}
+	for (const until of ["2099-12-01", "2099-12-01T09:00", "2099-12-01T09:00:00.5+08:00", "2099-12-01T09:00+0800"]) {
+		const accepted = await h.call({ action: "update", id: 1, until });
+		assert.ok(!text(accepted).startsWith("Error"), `${until}: ${text(accepted)}`);
+	}
+	// A legacy mark written straight into metadata follows the same rule on display.
+	await h.call({ action: "create", tasks: [{ subject: "B", metadata: { until: "2099-02-30T09:00:00Z" } }, { subject: "C", metadata: { until: "2099-12-01 09:00:00Z" } }] });
+	for (const id of [2, 3]) assert.ok(!text(await h.call({ action: "get", id })).includes("⏸"));
+});
+
+test("namespace validators for a wait key see only calls that set or actually remove it", async () => {
+	const h = load();
+	const seen: unknown[][] = [];
+	h.emit("todo:namespace", { v: 1, ns: "until", validate: (value: unknown, task: { id: number }, op: string) => {
+		seen.push([value, op, task.id]);
+		return typeof value === "string" ? undefined : "until is a string here";
+	} });
+	await h.call({ action: "create", tasks: [{ subject: "A" }, { subject: "B" }, { subject: "C" }, { subject: "D" }] });
+	for (const params of [{ id: 1, status: "completed" }, { id: 3, waitsOn: "CI" }, { id: 3, until: null }]) {
+		assert.ok(!text(await h.call({ action: "update", ...params })).startsWith("Error"), JSON.stringify(params));
+	}
+	assert.ok(!text(await h.call({ action: "delete", id: 2 })).startsWith("Error"));
+	assert.deepEqual(seen, [], "a task that never had until does not reach the until validator");
+	await h.call({ action: "update", id: 4, until: FUTURE });
+	assert.match(text(await h.call({ action: "update", id: 4, status: "completed" })), /^Error: metadata\.until refused #4/);
+	assert.deepEqual(seen, [[FUTURE, "update", 4], [undefined, "update", 4]]);
+});
+
+test("the prompt says to clear both fields to end a wait early", async () => {
+	const { DEFAULT_PROMPT_GUIDELINES } = await import("../src/todo.ts");
+	assert.ok(DEFAULT_PROMPT_GUIDELINES.some((line) => line.includes("waitsOn: null") && line.includes("until: null")));
+});

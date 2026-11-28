@@ -26,9 +26,15 @@ function metadataKeys(value: unknown): string[] {
 	return isRecord(value) ? Object.keys(value) : [];
 }
 
-/** The wait keys a call writes through its `waitsOn` and `until` fields, or all of them when it ends the task's wait. */
-function waitKeys(spec: unknown, ends = false): string[] {
-	return WAIT_KEYS.filter((key) => ends || (isRecord(spec) && spec[key] !== undefined));
+/**
+ * The wait keys a call sets through its `waitsOn` and `until` fields, and those it removes: a `null`, or the end of the wait
+ * (`ends`), removes a key only when the task had it (`had`).
+ */
+function waitKeys(spec: unknown, had: Record<string, unknown> | undefined = undefined, ends = false): string[] {
+	return WAIT_KEYS.filter((key) => {
+		const value = isRecord(spec) ? spec[key] : undefined;
+		return typeof value === "string" || ((value === null || ends) && had !== undefined && key in had);
+	});
 }
 
 /**
@@ -36,8 +42,9 @@ function waitKeys(spec: unknown, ends = false): string[] {
  * reducer's proposed state. Reads, `clear`, errors, and no-effect updates
  * change no task and run no validator.
  */
-export function changedTasks(op: Op, params: TaskMutationParams, next: TaskState): TaskChange[] {
+export function changedTasks(op: Op, params: TaskMutationParams, next: TaskState, before?: TaskState): TaskChange[] {
 	const find = (id: number) => next.tasks.find((t) => t.id === id);
+	const had = (id: number) => before?.tasks.find((t) => t.id === id)?.metadata;
 	switch (op.kind) {
 		case "import":
 			return next.tasks.map((task) => ({ task, op: "create", touched: [] }));
@@ -52,11 +59,11 @@ export function changedTasks(op: Op, params: TaskMutationParams, next: TaskState
 		case "update": {
 			const task = op.changed ? find(op.id) : undefined;
 			const ends = op.toStatus === "completed" || op.toStatus === "deleted";
-			return task ? [{ task, op: "update", touched: [...metadataKeys(params.metadata), ...waitKeys(params, ends)] }] : [];
+			return task ? [{ task, op: "update", touched: [...metadataKeys(params.metadata), ...waitKeys(params, had(op.id), ends)] }] : [];
 		}
 		case "delete": {
 			const task = find(op.id);
-			return task ? [{ task, op: "delete", touched: waitKeys(params, true) }] : [];
+			return task ? [{ task, op: "delete", touched: waitKeys(params, had(op.id), true) }] : [];
 		}
 		case "list":
 		case "get":

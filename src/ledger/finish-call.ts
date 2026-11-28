@@ -31,7 +31,7 @@ export function makeFinishCall(pi: ExtensionAPI, namespaces: NamespaceRegistry, 
 			commitState(sessionId, result.state);
 			return buildToolResult(action, input, result.state, result.op);
 		}
-		const refusal = namespaces.check(changedTasks(result.op, input, result.state)) ?? (await guards.check(guardChange));
+		const refusal = namespaces.check(changedTasks(result.op, input, result.state, before)) ?? (await guards.check(guardChange));
 		if (refusal) return refuse(action, input, before, refusal);
 		if (signal?.aborted) return refuse(action, input, before, ABORTED);
 		// Append before committing the live slot; even nested tool calls survive replay, and a failed append changes nothing.

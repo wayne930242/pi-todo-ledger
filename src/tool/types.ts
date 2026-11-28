@@ -171,7 +171,7 @@ const EvidenceInputSchema = Type.Object({
 const EvidenceSchema = (description: string) => Type.Array(EvidenceInputSchema, { description });
 
 const WAITS_ON_TEXT =
-	"What this task waits on (a person, CI, a train to end); it shows ⏸, and close and stale reminders leave the task alone while it waits. Completing or deleting the task clears it";
+	"What this task waits on (a person, CI, a train to end); it shows ⏸, and close and stale reminders leave the task alone while it waits. Completing or deleting the task clears it; to end a wait early, clear both waitsOn and until";
 const UNTIL_TEXT = "ISO 8601 time the task waits until, e.g. 2027-01-15T09:00:00+08:00; once it passes, an until-only wait ends";
 
 const CreateTaskInputSchema = Type.Object({
