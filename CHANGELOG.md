@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.1
 
 - Over the row budget, the panel ranks the rows: task rows in progress, then their live run rows, then the `Other workers` group, then open and completed tasks with no live run. A long list no longer pushes every worker off the panel: run rows stay under their todos and are claimed, so the host's Subagents box lists only the rest. Both views use the ranking; rows keep their tree or list order.
 - Compact mode: when some live run would still get no row of its own, each task's runs share the task's row (`◐ #55 S3 地圖 tab… ⟶ coremaptab-ui · opus · 執行中 4m`), led by the most active run with `+N` for the rest, and `Other workers` takes one row in the same form. The task part is cut first on a narrow row. A painted compact row claims every run it stands for, so the Subagents box empties. When every run fits, the two-row layout stays.
