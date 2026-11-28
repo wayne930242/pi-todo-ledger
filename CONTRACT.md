@@ -163,7 +163,7 @@ Since 0.8.0 the `todo` tool's `waitsOn` and `until` fields write these two top-l
 
 A task waits while its `status` is `pending` or `in_progress` and either `waitsOn` is a non-blank string or `until` is a time after now.
 A reader that judges open work, such as a close or stale reminder, treats a waiting task as held up rather than forgotten.
-An `update` to `completed` or `deleted`, and `delete`, remove both keys; a namespace validator registered for a key the task had sees the removal. A validator for a wait key runs only when the call sets the key or removes one the task had.
+An `update` to `completed` or `deleted`, and `delete`, remove both keys; a namespace validator registered for a key the task had sees the removal. A validator for a wait key follows the general rule in [Namespaces](#3-namespaces): it runs when the task carries the key after the change, or when the call sets the key or removes one the task had; ending the wait of a task that never had a key does not run that key's validator.
 The snapshot version stays 1.
 
 ### Optional Herdr launch identity (`metadata.herdr`)
