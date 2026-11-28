@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.0
+
+- When a bound subagent's run ends, the ledger records what it spent on its todo in `metadata.herdr.spend`: tokens, cost, wall time, runs, and models, summed over every run of the todo. A resume of the same session replaces that session's figures instead of counting them twice; a forked child's copy of its launcher's turns is not counted; an end is tied only to the todo its launch bound; the host's `subagent:run-end` event counts an end the model never read, once by its run id. A run with fallback models counts every spawned attempt (`attempts` on its end), the failed ones too. `todo get` shows a `spend:` line. The figures are an estimate from the child's transcript, not a bill. See [CONTRACT.md](CONTRACT.md#run-spend-metadataherdrspend).
+- The spend write is synchronous: it reads the list from the branch pi is on at that moment and appends in the same tick, so it never lands on a branch the session switched to. It waits only behind a `todo` call of the session already running or queued, and does not ask change guards, which are awaited.
+
 ## 0.9.0
 
 - With pi-straw-boss loaded, the panel shows the merge-train cars the session sent, under the todo whose ticket they carry (`🚂 1128c ▰▰▰▱▱▱▱ merge 12m · 等 1128b`), and the questions it asked that wait on you, under the todo they block (`⏸ 等你：要不要連同 ws04 一起部署？ 4m`). A car or question with no todo goes in a group: `其他車廂` / `Other cars`, `火車` / `Trains`, or `等你` / `Waiting on you`. They come from sb's `straw-boss:car-rows:v1` and `straw-boss:ask-rows:v1` probes; without sb nothing of them shows.

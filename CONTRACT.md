@@ -195,6 +195,41 @@ For names longer than 24 UTF-16 units, Straw Boss displays just the first 23 uni
 Resolve the live pane at read time rather than targeting that cosmetic label or a saved pane id.
 This namespace needs no new status, schema field, or contract version.
 
+### Run spend (`metadata.herdr.spend`)
+
+Since 0.9.0, when a bound run ends, the ledger records what it spent on its task.
+A run's end arrives two ways:
+
+- the host's event `subagent:run-end` on `pi.events`, `{ v: 1, id, kind, name?, item?, sessionFile?, elapsed?, attempts? }`: `id` is the run id the launch acknowledged (`details.id`), `kind` is `"result"` or `"ping"`, `elapsed` the run's wall time in seconds, and `attempts` every spawned attempt of the run in order, `{ model?, sessionFile?, elapsed }`, a fallback's failed ones included. Only `v`, `id`, and `kind` are required: a run that failed before it wrote a session file ends without `sessionFile` and counts its time, and the ledger never reads `name` or an attempt's `model`. The host sends it as it delivers the end, so an end still counts when its message never reaches the model (a steer cleared before the turn);
+- the custom message in the calling session: `subagent_result` when the run finished or `subagent_ping` when it stopped to ask. Its `details` carry the same `id`, `item`, `sessionFile`, `elapsed`, and `attempts` when the host supplies them (Maestro since `sb-host-a5a9c43`).
+
+The ledger finds the task as the launch bound it: the non-deleted task whose `metadata.herdr.runs` hold the run id, else one of the end's session files, else, by `item`, the task with that uid.
+A bare `<session8>#<id>` is never looked up by its number at the end: after `clear` or a branch switch the number names another task, and the launch's binding is what proves the identity.
+No match, several matches, or a deleted task leave the list unchanged.
+
+It reads each session file the end names (each attempt's, else `sessionFile`) and sums the `usage` of every assistant turn in it (every branch: all of it was spent), except the turns a fork copied from the launcher: a turn older than the file's `session` header, or one whose entry id the calling session holds.
+Then it writes `metadata.herdr.spend` as an `update` of that task, keeping every other `metadata` key:
+
+```json
+{
+  "input": 1500, "output": 300, "cacheRead": 3000, "cacheWrite": 0, "tokens": 4800, "cost": 0.75,
+  "ms": 125000, "runs": 1, "models": ["anthropic/claude-opus-5-5"], "ended": ["0accb6d1-4380-4d51-a6d7-81dd0408d82f"],
+  "sessions": [{ "session": "/path/child.jsonl", "input": 1500, "output": 300, "cacheRead": 3000, "cacheWrite": 0, "tokens": 4800, "cost": 0.75, "models": ["anthropic/claude-opus-5-5"] }]
+}
+```
+
+The top-level figures are the task's totals over all its runs: `tokens` is pi's `totalTokens`, `cost` its `cost.total` in US dollars, `ms` the sum of the ends' wall time (an end with `attempts` adds its attempts' `elapsed`, else its own), `runs` the number of ended runs (results and pings), and `models` the `provider/model` ids seen, first seen first, at most eight.
+`ended` keeps the last 24 run ids counted, so the event and the message of one run count once.
+A resume continues the same session file, so the ledger replaces that session's figures with the file's new total instead of adding them again; `sessions` keeps up to twelve, newest last, and an older one stays in the totals but is no longer told apart.
+A file that cannot be read adds the run and its time, not tokens.
+A later launch keeps `spend` when it rebinds `metadata.herdr`.
+
+The write is synchronous: in one tick it reads the list from the branch pi is on (its newest `todo/v1` snapshot, not the in-memory list, which a `session_tree` replay still to run may hold from the branch before), reads the files, and appends the snapshot.
+No branch switch, replay, or shutdown can come between the read and the append, so the write lands on the branch pi is on, with that branch's tasks: a branch that does not hold the bound task records nothing.
+A `todo` call of the session that is running or queued holds the list while its guards run; the write then waits its turn in the session's queue and does the same there, and one queued before `session_shutdown` is dropped.
+Namespace validators judge the write as any `update`; change guards (see [Change guards](#4-change-guards)) are not asked, since they are awaited. A validator's refusal leaves the list unchanged and appends `Todo spend: <reason>` to the message.
+The figures are an estimate from what pi wrote in the child's transcript, bookkeeping rather than a bill. `get` shows them on a `spend:` line.
+
 ## 4. Change guards
 
 A namespace validator judges one task's value.
@@ -215,7 +250,7 @@ const register = () =>
 
 A later registration of the same `id` replaces the earlier one; the extension ignores, with a console warning, a payload whose `v` is not 1, whose `id` is empty, or whose `check` is not a function.
 
-The extension calls `check(change)` for every call that would change the list: `create` (a single task or a `tasks[]` batch, with or without metadata), `import`, `update`, `delete`, and `clear`.
+The extension calls `check(change)` for every call that would change the list (the ledger's own [run spend](#run-spend-metadataherdrspend) record does not reach them): `create` (a single task or a `tasks[]` batch, with or without metadata), `import`, `update`, `delete`, and `clear`.
 On import, namespace validators see each relevant task as a `create`.
 Guard registration accepts an optional `imports: true` field within v1.
 If any registered guard has not opted in, the tool returns `Error: guard <id> refused: guard does not accept imports` without calling the guards or committing the list.

@@ -90,3 +90,17 @@ export function replayFromBranch(ctx: { sessionManager: { getBranch(): Iterable<
 		fromV1 ?? fromLegacyEntries ?? fromToolResults ?? { tasks: [...EMPTY_STATE.tasks], nextId: EMPTY_STATE.nextId }
 	);
 }
+
+/**
+ * The list the session's live branch holds now, as `replayFromBranch` reads it, from its newest valid `todo/v1` snapshot when there is one (a walk back from the
+ * leaf, which validates that one snapshot only). A writer that must commit onto the branch pi is on at this moment reads this, not the live slot: pi moves the leaf
+ * before its `session_tree` handlers replay the slot.
+ */
+export function listOnBranch(ctx: { sessionManager: { getBranch(): Iterable<unknown> } }): TaskState {
+	const branch = Array.from(ctx.sessionManager.getBranch());
+	for (let i = branch.length - 1; i >= 0; i--) {
+		const e = branch[i] as { type?: string; customType?: string; data?: unknown };
+		if (e?.type === "custom" && e.customType === SNAPSHOT_ENTRY_TYPE && isSnapshotV1(e.data)) return stateOf(e.data);
+	}
+	return replayFromBranch({ sessionManager: { getBranch: () => branch } });
+}

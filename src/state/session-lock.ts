@@ -21,3 +21,8 @@ export function withSessionLock<T>(sessionId: string, fn: () => Promise<T>): Pro
 	});
 	return run;
 }
+
+/** Whether a call of the session is running or queued: a synchronous writer must queue behind it, else the call commits a list read before the write. */
+export function sessionBusy(sessionId: string): boolean {
+	return tails.has(sessionId);
+}

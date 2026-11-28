@@ -2,6 +2,7 @@ import type { TaskState } from "../state/state.ts";
 import type { Op } from "../state/state-reducer.ts";
 import { deriveBlocks } from "../state/task-graph.ts";
 import { isOpen, resultSuffix } from "../view/task-labels.ts";
+import { spendLine } from "../ledger/spend.ts";
 import { sanitizeTerminalText } from "./sanitize.ts";
 import type { Task, TaskAction, TaskDetails, TaskMutationParams } from "./types.ts";
 
@@ -60,6 +61,8 @@ function formatGetLines(task: Task, state: TaskState): string {
 	if (task.points !== undefined) lines.push(`  points: ${task.points}`);
 	if (task.anchor) lines.push(`  anchor: ${sanitizeTerminalText(task.anchor)}`);
 	if (task.graph) lines.push(`  graph: ${task.graph}`);
+	const spend = spendLine((task.metadata?.herdr as { spend?: unknown } | undefined)?.spend);
+	if (spend) lines.push(`  spend: ${spend}`);
 	for (const e of task.evidence ?? []) {
 		const sha = e.sha ? ` @${sanitizeTerminalText(e.sha)}` : "";
 		lines.push(`  evidence: ${e.result} ${sanitizeTerminalText(e.command)}${sha} (${sanitizeTerminalText(e.at)})`);
