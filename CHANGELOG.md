@@ -3,7 +3,8 @@
 ## 0.8.0
 
 - `todo` `create` and `update` take `waitsOn` (what the task waits on, such as `trains to end`) and `until` (a future ISO time) to mark a task as waiting; `update` with `null` clears either. They write the `metadata.waitsOn` and `metadata.until` keys the panel, `/todos`, and tool results already show as `⏸`, so the `todo/v1` snapshot keeps its shape and older lists read as before.
-- Completing or deleting a task removes its wait mark. A new prompt guideline tells the model to mark a task waiting instead of leaving it open without a word.
+- `until`, and a `metadata.until` already stored, follow the date rule pi-straw-boss reads: an ISO date or date-time with a `T` on a real calendar day. `2099-02-30` and `2099-12-01 09:00` are refused and mark no wait.
+- Completing or deleting a task removes its wait mark; a namespace validator for a wait key runs only when the call sets that key or removes one the task had. A new prompt guideline tells the model to mark a task waiting instead of leaving it open without a word, and to clear both fields to end a wait early.
 
 ## 0.7.3
 
