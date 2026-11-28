@@ -53,6 +53,7 @@ The panel lists each task's live bound runs under it.
 A run that belongs to no task, such as a scout sent out on the side, is listed under an `Other workers` group (`其他 worker` in zh-TW) after the tasks, in the same row format; the panel shows that group even when the list is empty.
 The panel claims every run row it paints, so the host's Subagents box shows only the runs the panel does not.
 See [docs/overlay.md](docs/overlay.md#other-workers).
+With pi-straw-boss loaded, the panel also shows the merge-train cars the session sent (`🚂 1128c ▰▰▰▱▱▱▱ merge 12m`) and the questions it asked that wait on you (`⏸ 等你：…`), each under the todo it belongs to, else in a group; see [docs/overlay.md](docs/overlay.md#cars-and-questions-pi-straw-boss).
 
 `/todos` and the panel's full view indent each open task under its first unfinished blocker; the panel's default focus view lists tasks flat and names every unfinished blocker after the subject. Both show the owner as `@owner`.
 To mark a task as waiting, pass `waitsOn` with what it waits on (a person, CI, `trains to end`); to defer it until a particular time, pass `until` with an ISO timestamp, e.g. `2027-01-15T09:00:00+08:00`.

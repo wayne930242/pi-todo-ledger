@@ -10,7 +10,7 @@ The widget is mounted above the Pi editor under the key `rpiv-todos`, the key rp
 | Stage | Condition |
 | --- | --- |
 | Created | At the first session start that has a UI. A headless session never creates it. |
-| Registered | While at least one overlay-visible task exists, or the run host lists a run of this session (see [Other workers](#other-workers)). The widget unregisters itself when both are gone, and re-registers when a task or a run appears. With no task, a refresh after a `subagent` or `subagent_resume` call, or at the end of a turn, finds the new run. |
+| Registered | While at least one overlay-visible task exists, or the run host lists a run of this session (see [Other workers](#other-workers)), or pi-straw-boss lists a car or a question of it (see [Cars and questions](#cars-and-questions-pi-straw-boss)). The widget unregisters itself when all are gone, and re-registers when one appears. With no task, a refresh after a `subagent` or `subagent_resume` call, or at the end of a turn, finds the new run; a car or question is found within 5 seconds. |
 | Bound | Only the foreground session's overlay is refreshed. A detached or child session has its own task state and never rebinds or repaints the foreground panel. |
 | Disposed | On the foreground session's shutdown. A child session shutting down leaves the overlay alone. |
 
@@ -133,6 +133,47 @@ The group follows the row budget:
 
 The panel claims a group row the way it claims a bound run row: only a row painted in full, checked by its exact line in the fullscreen layout. A row cut by the width, clipped by the layout, covered by a popup, or folded into the summary stays unclaimed, so the Subagents widget keeps showing that run. When no ledger claims a run, the host's own widget is the fallback that shows it.
 
+## Cars and questions (pi-straw-boss)
+
+With pi-straw-boss (sb) loaded, the panel also shows what sb knows of the session and the host's run rows do not: the merge-train
+cars it sent, and the questions it asked that wait on you. It reads them from two probes on `pi.events`, as it reads the run rows:
+`straw-boss:car-rows:v1` and `straw-boss:ask-rows:v1` (sb's `docs/specs/2026-11-28-car-rows.md` and `2026-11-28-boss-asks.md`).
+Without sb, or with an sb that does not answer them, nothing of them shows and the panel is as before.
+
+```text
+● Todos (1/10)
+├─ ◐ #2 MP-5801 FE2 訂單列表改版
+│    ├ fe2-list-build · opus · 執行中 31m
+│    └ 🚂 1128c ▰▰▰▱▱▱▱ merge 12m · 等 1128b
+├─ ◐ #3 MP-5804 v3 出貨單 API 修正
+│    ├ ⏸ 等你：MP-5804 要不要連同 ws04 一起部署？ 4m
+│    └ v3-ship-review · opus · 審查中 9m
+├─ ○ #5 MP-5790 ws04 升級前檢查
+├─ 其他 worker
+│    └ train-scout · opus · 執行中 3m
+└─ 其他車廂
+     └ 📮 已送出 3m · 調度員還沒收 · MP-5779
+```
+
+- A car row goes under the todo sb names in its `item` (the todo's uid, or `<session8>#<id>`): sb picks the open todo whose subject
+  names the car's ticket. sb writes every word of the row (`🚂 1128c ▰▰▰▱▱▱▱ merge`, `✅ 1128c 已落地 1.62.0-beta.24`, `↩ 退回`);
+  the panel adds the time in the car's current stage and what it waits on, and colours a warning row `warning` and a returned or
+  dropped one `error`. A car with no todo goes in the group sb names, `其他車廂` / `Other cars`, or `火車` / `Trains` for the trains an
+  integrator received cars for.
+- A question row, `⏸ 等你：<question> 4m` (`⏸ waits on you: …`), goes under the todo it blocks: the todo sb bound when the question was
+  asked. The question is cut at 48 columns; `/boss asks` prints it whole. Only this session's questions and its subagents' show. One
+  with no todo here goes in a `等你` / `Waiting on you` group, the first group, as `⏸ <question> 4m`. Another session's questions
+  are on `/boss asks` and sb's GUI.
+- Car and question rows rank with run rows (see [Overflow](#overflow)): a todo's live rows are its questions, its runs, then its cars, all
+  together, and their groups rank with Other workers. A row in a group whose todo has no row carries its todo's number.
+- In [compact mode](#compact-mode) they share the todo's row like runs. The row after ` ⟶ ` is the one that most wants attention: a
+  question waiting on you first, then a returned or dropped car, then a working run, a run waiting for a reply or a car that warns,
+  then the rest, idle runs last.
+- The summary row counts the rows a group leaves out, such as `⏸ 等你 1` or `2 其他車廂`. The collapsed row counts the questions
+  waiting on you: `└─ ⏸ 等你 1 · ctrl+shift+t 焦點`.
+- sb reads its rows every 15 seconds, between turns too; the panel looks every 5 seconds and redraws when they changed, so a
+  question asked in a dialog shows while the dialog waits.
+
 ## Overflow
 
 The content-row budget is `maxWidgetLines` (default `12`), and the heading counts
@@ -140,10 +181,11 @@ against it. When the rows do not all fit, one row is reserved for the summary,
 and both views hand out the rest by rank, in display order within each rank:
 
 1. task rows of the tasks in progress;
-2. live run rows, all runs of one task together, with that task's row when it has
-   none yet; a task in progress whose runs do not fit keeps its row and shows
-   `· N runs`;
-3. the [Other workers](#other-workers) group, holding the live runs whose task got no row;
+2. live rows (runs, and sb's cars and questions), all of one task's together, with
+   that task's row when it has none yet; a task in progress whose runs do not fit
+   keeps its row and shows `· N runs`;
+3. the groups, holding the live rows whose task got no row: `Waiting on you`,
+   [Other workers](#other-workers), then the car groups;
 4. open tasks with no live run;
 5. completed tasks with no live run, oldest first.
 

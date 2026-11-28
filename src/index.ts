@@ -53,6 +53,7 @@ import {
 import { registerTodosCommand, registerTodoTool, TOOL_NAME } from "./todo.ts";
 import type { TodoOverlay } from "./todo-overlay.ts";
 import { RUN_ROWS_EVENT } from "./view/live-runs.ts";
+import { askRows, carRows, type SbQuery, sbSignature } from "./view/sb-rows.ts";
 
 // Held in a variable so the type checker does not require the optional peer.
 const I18N_LOADER: string = "@juicesharp/rpiv-i18n/loader";
@@ -63,6 +64,9 @@ type I18nLoader = {
 
 /** Delay the overlay graph pre-warm until Pi's startup work has settled. */
 export const PREWARM_DELAY_MS = 2000;
+
+/** How often the foreground looks whether sb's car or ask rows changed: sb reads them every 15 s, between turns too (an ask waits in a dialog). */
+export const SB_LOOK_MS = 5000;
 
 type TodoOverlayModule = typeof import("./todo-overlay.ts");
 type TodoOverlayImporter = () => Promise<TodoOverlayModule>;
@@ -163,15 +167,17 @@ export default function (
 
 	// The host's run-rows probe. Without a claim it only reads this session's runs.
 	const queryRuns = (p: object) => pi.events.emit(RUN_ROWS_EVENT, p);
-	/** Whether the host lists any run of this session: such runs show on the panel even with no task. */
-	const hostHasRuns = (): boolean => {
+	// sb's car-rows and ask-rows probes (src/view/sb-rows.ts); with no sb loaded they stay unanswered.
+	const querySb: SbQuery = (event, p) => pi.events.emit(event, p);
+	/** Whether the host lists any run of this session, or sb any car or ask of it: such rows show on the panel even with no task. */
+	const hostHasRows = (): boolean => {
 		const p: { rows?: { rows?: unknown } } = {};
 		try {
 			queryRuns(p);
 		} catch {
 			return false;
 		}
-		return Array.isArray(p.rows?.rows) && p.rows.rows.length > 0;
+		return (Array.isArray(p.rows?.rows) && p.rows.rows.length > 0) || carRows(querySb).length > 0 || askRows(querySb).rows.length > 0;
 	};
 
 	async function updateTodoOverlay(
@@ -179,12 +185,12 @@ export default function (
 		generation = lifecycleGeneration,
 	): Promise<void> {
 		const hasVisibleTasks = getRenderState().tasks.some((task) => task.status !== "deleted");
-		if (!uiCtx || (!todoOverlay && !hasVisibleTasks && !hostHasRuns())) return;
+		if (!uiCtx || (!todoOverlay && !hasVisibleTasks && !hostHasRows())) return;
 
 		const { TodoOverlay } = await loadTodoOverlay();
 		if (generation !== lifecycleGeneration || !uiCtx) return;
 
-		todoOverlay ??= new TodoOverlay(queryRuns);
+		todoOverlay ??= new TodoOverlay(queryRuns, querySb);
 		todoOverlay.setUICtx(uiCtx);
 		if (resetCompletedDisplayState) todoOverlay.resetCompletedDisplayState();
 		todoOverlay.update();
@@ -256,6 +262,25 @@ export default function (
 		if (isForeground) await updateTodoOverlay(true);
 	};
 
+	// sb's rows change with no event of this session (a car moves, an ask opens while a dialog waits): while a foreground
+	// session has a UI, look every SB_LOOK_MS and redraw when they changed. Stopped with that session.
+	let sbLook: ReturnType<typeof setInterval> | undefined;
+	const stopSbLook = () => {
+		if (sbLook) clearInterval(sbLook);
+		sbLook = undefined;
+	};
+	const startSbLook = () => {
+		stopSbLook();
+		let seen = sbSignature(querySb);
+		sbLook = setInterval(() => {
+			const now = sbSignature(querySb);
+			if (now === seen) return;
+			seen = now;
+			void refresh().catch(() => undefined);
+		}, SB_LOOK_MS);
+		sbLook.unref?.();
+	};
+
 	const warned = new Set<string>();
 	pi.on("session_start", async (_event, ctx) => {
 		let id: string;
@@ -287,6 +312,7 @@ export default function (
 		if (id !== getActiveRenderSession()) return;
 		const generation = ++lifecycleGeneration;
 		uiCtx = ctx.ui;
+		startSbLook();
 		await updateTodoOverlay(true, generation);
 	});
 
@@ -319,6 +345,7 @@ export default function (
 			// replaced session cannot inherit the stale overlay or UI context.
 			lifecycleGeneration++;
 			uiCtx = undefined;
+			stopSbLook();
 			// `dispose()`'s first act is setWidget(KEY, undefined) on a possibly-stale
 			// ui proxy, which can throw. evictSession(s) above already deleted this
 			// slot, so leaving `activeRenderSession` pointing at it would resolve

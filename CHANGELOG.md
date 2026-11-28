@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- With pi-straw-boss loaded, the panel shows the merge-train cars the session sent, under the todo whose ticket they carry (`🚂 1128c ▰▰▰▱▱▱▱ merge 12m · 等 1128b`), and the questions it asked that wait on you, under the todo they block (`⏸ 等你：要不要連同 ws04 一起部署？ 4m`). A car or question with no todo goes in a group: `其他車廂` / `Other cars`, `火車` / `Trains`, or `等你` / `Waiting on you`. They come from sb's `straw-boss:car-rows:v1` and `straw-boss:ask-rows:v1` probes; without sb nothing of them shows.
+- They rank with the run rows under the row budget, and in compact mode share their todo's row, a question waiting on you first. The collapsed row counts the questions waiting on you. The panel looks for changes every 5 seconds, so a question shows while its dialog waits.
+
 ## 0.8.2
 
 - Shortened `todo`'s instructions by describing each option once. Task actions, validation and saved snapshots are unchanged.

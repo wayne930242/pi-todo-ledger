@@ -42,6 +42,18 @@ import type { Task } from "./tool/types.ts";
 
 import { history } from "./ledger/herdr-runs.ts";
 import { liveRows, runLine, runState, type Query, type RunRow } from "./view/live-runs.ts";
+import {
+	type AskRow,
+	type AskRows,
+	askLine,
+	askRows,
+	askTodo,
+	type CarRow,
+	carLine,
+	carNames,
+	carRows,
+	type SbQuery,
+} from "./view/sb-rows.ts";
 
 const WIDGET_KEY = "rpiv-todos";
 
@@ -52,6 +64,8 @@ const OVERLAY_KEY_HINT = "{key} {next}";
 const OVERLAY_COLLAPSED = "collapsed";
 const OVERLAY_SEPARATOR = ", ";
 const OVERLAY_OTHERS = "Other workers";
+const OVERLAY_ASKS = "Waiting on you";
+const OVERLAY_CARS = "Other cars";
 
 /** What the panel shows: one of the two views, or the two-line collapsed state. */
 type PanelState = OverlayView | "collapsed";
@@ -69,8 +83,21 @@ interface Frame {
 	ticking: boolean;
 }
 
-/** Runs of the Other workers group that fit `rows`: the heading and at least one run, or none. */
+/** Rows of a group that fit `rows`: the heading and at least one row, or none. */
 const groupFit = (rows: number, runs: number) => (runs > 0 && rows >= 2 ? Math.min(runs, rows - 1) : 0);
+
+/** One live row under a todo or in a group: a run of the host, or a car or an ask of sb (src/view/sb-rows.ts). `key` is unique on a panel. */
+type Live =
+	| { kind: "run"; key: string; run: RunRow }
+	| { kind: "car"; key: string; car: CarRow }
+	| { kind: "ask"; key: string; ask: AskRow };
+
+/** A group of live rows whose todo has no row: the asks waiting on the boss, the Other workers, or a group of cars sb names. */
+interface Group {
+	kind: Live["kind"];
+	title: string;
+	rows: Live[];
+}
 
 /** The rows one budget gives, decided by rank (see TodoOverlay.allot). */
 interface Allotment {
@@ -78,10 +105,8 @@ interface Allotment {
 	shown: Task[];
 	/** Shown tasks whose run rows are drawn; any other shown task with runs counts them on its row. */
 	withRuns: Set<Task>;
-	/** The Other workers group: live runs of this session whose task has no row. */
-	workers: RunRow[];
-	/** How many of `workers` get a row under the group heading. */
-	group: number;
+	/** The groups, in display order, each with how many of its rows get a row under its heading (compact: all, on its one row). */
+	groups: { group: Group; n: number }[];
 	/** Rows the budget leaves unused. */
 	left: number;
 }
@@ -89,10 +114,16 @@ interface Allotment {
 /** Narrowest left part (branch, glyph, id, start of the subject) a compact row keeps before its run. */
 const COMPACT_MIN_LEFT = 12;
 
-/** How a run ranks for the one spot on a compact row: working, then waiting for a reply, then the rest, idle last. */
+/**
+ * How a live row ranks for the one spot on a compact row: a question waiting on the boss (the todo's blocker), a returned or dropped
+ * car, a working run, a run waiting for a reply or a car that warns, then the rest, idle runs last.
+ */
 const ACTIVITY: Record<string, number> = { running: 0, waiting: 1, idle: 3 };
-const mostActive = (runs: readonly RunRow[]) =>
-	runs.reduce((best, r) => ((ACTIVITY[runState(r) ?? ""] ?? 2) < (ACTIVITY[runState(best) ?? ""] ?? 2) ? r : best));
+const CAR_RANK: Record<CarRow["tone"], number> = { bad: -1, warn: 1, wait: 2, ok: 2 };
+const attention = (l: Live) =>
+	l.kind === "ask" ? -2 : l.kind === "car" ? CAR_RANK[l.car.tone] : (ACTIVITY[runState(l.run) ?? ""] ?? 2);
+const mostActive = (rows: readonly Live[]) => rows.reduce((best, l) => (attention(l) < attention(best) ? l : best));
+const runsOf = (rows: readonly Live[]) => rows.flatMap((l) => (l.kind === "run" ? [l.run] : []));
 
 /** What one frame's row drawing needs, shared by the full and focus views. */
 interface DrawContext {
@@ -101,14 +132,41 @@ interface DrawContext {
 	truncate: (line: string) => string;
 	bound: Map<number, ReturnType<typeof history>>;
 	live: ReturnType<typeof liveRows>;
+	/** sb's car rows, and the asks of this session waiting on the boss; none without sb. */
+	cars: CarRow[];
+	asks: AskRows;
 	/** Live runs of this session bound to no task on the panel, in the host's order. */
 	others: RunRow[];
+	/** The groups of the frame, as the allotment gave them rows. */
+	groups: { group: Group; n: number }[];
 	runOwners: Map<string, number>;
+	/** The task each bound live row (by key) belongs to, for the `#id` of a row in a group. */
+	owners: Map<string, number>;
 	showIds: boolean;
 	now: number;
 	evidence: "inline" | "screen" | undefined;
 	/** Compact mode: a task's runs, and the Other workers group, share one row with it (see budgeted). */
 	compact: boolean;
+}
+
+/** A live row's words: a run as the host's row, a car as sb words it, an ask with its question. `grouped`: under the asks' heading. */
+function liveText(l: Live, draw: DrawContext, grouped: boolean): string {
+	const fg = (color: Parameters<Theme["fg"]>[0], text: string) => draw.theme.fg(color, text);
+	if (l.kind === "run") return runLine(l.run, draw.now, fg);
+	return l.kind === "car" ? carLine(l.car, draw.now, fg) : askLine(l.ask, draw.now, fg, grouped);
+}
+
+/** `2 waiting on you`, as the collapsed panel and the summary count the asks. */
+const askCount = (n: number) => t("overlay.asks.count", "{n} waiting on you").replace("{n}", String(n));
+
+/** What each group leaves out, for the summary row: workers, asks, or cars by their group. */
+function groupsLeft(groups: readonly { group: Group; n: number }[]): string[] {
+	return groups
+		.filter(({ group, n }) => n < group.rows.length)
+		.map(({ group, n }) => {
+			const k = group.rows.length - n;
+			return group.kind === "run" ? formatWorkerCount(k) : group.kind === "ask" ? `⏸ ${askCount(k)}` : `${k} ${group.title}`;
+		});
 }
 
 export class TodoOverlay {
@@ -130,8 +188,10 @@ export class TodoOverlay {
 	private readonly nonce = Math.random().toString(36).slice(2, 10);
 	private tick?: ReturnType<typeof setInterval>;
 	private query?: Query;
-	constructor(query?: Query) {
+	private sb?: SbQuery;
+	constructor(query?: Query, sb?: SbQuery) {
 		this.query = query;
+		this.sb = sb;
 	}
 
 	private sendClaim(ids: string[]) {
@@ -252,8 +312,8 @@ export class TodoOverlay {
 		const snapshot = this.getSnapshot();
 		const visible = this.selectOverlayTasks(snapshot);
 
-		// With no task to show, the panel stays for this session's runs (the Other workers group).
-		if (visible.length === 0 && !liveRows(this.query)?.size) {
+		// With no task to show, the panel stays for this session's runs (the Other workers group), cars and asks.
+		if (visible.length === 0 && !liveRows(this.query)?.size && !carRows(this.sb).length && !askRows(this.sb).rows.length) {
 			this.finishFrame([]);
 			if (this.widgetRegistered) {
 				this.uiCtx.setWidget(WIDGET_KEY, undefined);
@@ -387,7 +447,9 @@ export class TodoOverlay {
 		const overlayTasks = this.selectOverlayTasks(snapshot);
 		// Every state asks the host: runs bound to no task join the Other workers group, or its count.
 		const live = liveRows(this.query);
-		if (overlayTasks.length === 0 && !live?.size) {
+		const cars = carRows(this.sb);
+		const asks = askRows(this.sb);
+		if (overlayTasks.length === 0 && !live?.size && !cars.length && !asks.rows.length) {
 			this.finishFrame([]);
 			return [];
 		}
@@ -409,7 +471,16 @@ export class TodoOverlay {
 			truncateToWidth(line, width, "…");
 		const counts = selectTodoCounts(overlayState);
 		const hasActive = selectHasActive(overlayState);
-		const showIds = (hasRuns && !!live?.size) || selectShowTaskIds(overlayState);
+		const owners = new Map<string, number>();
+		for (const c of cars) {
+			const owner = overlayTasks.find((task) => carNames(c, task));
+			if (owner) owners.set(`car:${c.id}`, owner.id);
+		}
+		for (const a of asks.rows) {
+			const id = askTodo(a, asks.session);
+			if (id !== undefined && overlayTasks.some((task) => task.id === id)) owners.set(`ask:${a.id}`, id);
+		}
+		const showIds = (hasRuns && !!live?.size) || owners.size > 0 || selectShowTaskIds(overlayState);
 
 		const headingColor = hasActive ? "accent" : "dim";
 		const headingIcon = hasActive ? "●" : "○";
@@ -427,8 +498,12 @@ export class TodoOverlay {
 			truncate,
 			bound,
 			live,
+			cars,
+			asks,
 			others,
+			groups: [],
 			runOwners: new Map([...bound].flatMap(([id, h]) => h.runs.map(r => [r.id, id] as const))),
+			owners,
 			showIds,
 			now: Date.now(),
 			evidence: this.evidence(),
@@ -444,9 +519,13 @@ export class TodoOverlay {
 		// collapsed) — render a static collapsed label instead of advertising an
 		// unbound key. Nothing is claimed; the tick keeps the count current.
 		if (this.current() === "collapsed") {
-			this.finishFrame([], others.length > 0);
+			this.finishFrame([], others.length > 0 || asks.rows.length > 0);
 			const hint = this.keyHint() ?? t("overlay.collapsed", OVERLAY_COLLAPSED);
-			const count = others.length ? `+${formatWorkerCount(others.length)}` : undefined;
+			const counts = [
+				others.length ? `+${formatWorkerCount(others.length)}` : "",
+				asks.rows.length ? `⏸ ${askCount(asks.rows.length)}` : "",
+			].filter(Boolean);
+			const count = counts.length ? counts.join(t("overlay.separator", OVERLAY_SEPARATOR)) : undefined;
 			return this.withTrailingSpacer([heading, this.closingRow(draw, count, hint)]);
 		}
 
@@ -478,7 +557,7 @@ export class TodoOverlay {
 		return this.withTrailingSpacer([heading, ...body]);
 	}
 
-	/** The whole dependency tree, budgeted by rank (see allot), then the Other workers group (the `"full"` view). */
+	/** The whole dependency tree, budgeted by rank (see allot), then the groups (the `"full"` view). */
 	private fullBody(
 		overlayState: { tasks: Task[]; nextId: number },
 		plan: ReturnType<typeof planView>,
@@ -486,16 +565,16 @@ export class TodoOverlay {
 		draw: DrawContext,
 	): string[] {
 		const all = [...selectVisibleTasks(overlayState)];
-		const { shown, summarized, hintRow, hint, others } = this.budgeted(all, all.length, bodyBudget, draw);
+		const { shown, summarized, hintRow, hint } = this.budgeted(all, all.length, bodyBudget, draw);
 		const frame: Frame = { drawn: [], marked: new Map(), ticking: false };
 		const lines = this.drawTasks(
 			shown.shown.map((task) => ({ task, row: plan.rows.get(task.id) })),
 			shown.withRuns,
-			!summarized && !hintRow && !shown.group,
+			!summarized && !hintRow && !shown.groups.some((g) => g.n),
 			draw,
 			frame,
 		);
-		lines.push(...this.drawGroup(draw.others.slice(0, shown.group), !summarized && !hintRow, draw, frame));
+		lines.push(...this.drawGroups(shown.groups, !summarized && !hintRow, draw, frame));
 		this.endFrame(frame, draw);
 		if (hintRow) lines.push(this.closingRow(draw, undefined, hint));
 		if (!summarized) return lines;
@@ -511,16 +590,16 @@ export class TodoOverlay {
 			const more = t("overlay.more", OVERLAY_MORE);
 			parts.push(`+${overflow} ${more} (${overflowParts.map(([n, status]) => `${n} ${formatStatusLabel(status)}`).join(", ")})`);
 		}
-		if (shown.group < others) parts.push(`${parts.length ? "" : "+"}${formatWorkerCount(others - shown.group)}`);
+		for (const left of groupsLeft(shown.groups)) parts.push(`${parts.length ? "" : "+"}${left}`);
 		lines.push(this.closingRow(draw, parts.join(t("overlay.separator", OVERLAY_SEPARATOR)), hint));
 		return lines;
 	}
 
 	/**
 	 * The focus view (default): in-progress tasks with their runs, the next open
-	 * tasks (two, or three when nothing is in progress), the Other workers group,
-	 * then this turn's completed rows, budgeted by rank (see allot), and one summary
-	 * row counting whatever is hidden. Completed rows are drawn before the group.
+	 * tasks (two, or three when nothing is in progress), the groups, then this
+	 * turn's completed rows, budgeted by rank (see allot), and one summary row
+	 * counting whatever is hidden. Completed rows are drawn before the groups.
 	 * Rows are flat, so every unfinished blocker goes to the `⛓` tail.
 	 */
 	private focusBody(
@@ -534,7 +613,7 @@ export class TodoOverlay {
 		const completed = overlayTasks.filter((t) => t.status === "completed");
 		const next = pending.slice(0, inProgress.length ? 2 : 3);
 		const total = inProgress.length + pending.length + completed.length;
-		const { shown, summarized, hintRow, hint, others } = this.budgeted(
+		const { shown, summarized, hintRow, hint } = this.budgeted(
 			[...inProgress, ...next, ...completed],
 			total,
 			bodyBudget,
@@ -556,11 +635,11 @@ export class TodoOverlay {
 		const lines = this.drawTasks(
 			shown.shown.map((task) => ({ task, row: flat(task) })),
 			shown.withRuns,
-			!summarized && !hintRow && !shown.group,
+			!summarized && !hintRow && !shown.groups.some((g) => g.n),
 			draw,
 			frame,
 		);
-		lines.push(...this.drawGroup(draw.others.slice(0, shown.group), !summarized && !hintRow, draw, frame));
+		lines.push(...this.drawGroups(shown.groups, !summarized && !hintRow, draw, frame));
 		this.endFrame(frame, draw);
 		if (hintRow) lines.push(this.closingRow(draw, undefined, hint));
 		if (!summarized) return lines;
@@ -576,33 +655,60 @@ export class TodoOverlay {
 		)
 			.filter(([n]) => n > 0)
 			.map(([n, status]) => `${n} ${formatStatusLabel(status)}`);
-		if (shown.group < others) parts.push(formatWorkerCount(others - shown.group));
+		parts.push(...groupsLeft(shown.groups));
 		const summary = `+${parts.join(t("overlay.separator", OVERLAY_SEPARATOR))}`;
 		lines.push(this.closingRow(draw, summary, hint));
 		return lines;
 	}
 
-	private groupCandidates(visible: readonly Task[], draw: DrawContext): RunRow[] {
-		const ids = new Set(visible.map(task => task.id));
-		return [...(draw.live?.values() ?? [])].filter(run => !ids.has(draw.runOwners.get(run.id) ?? -1));
+	/**
+	 * The groups for the tasks that got a row, in display order: the asks waiting on the boss, the Other workers, then the cars by
+	 * the group sb names (a car whose todo has no row goes in Other cars). Each holds the rows of its kind whose task has no row.
+	 */
+	private groupCandidates(visible: readonly Task[], draw: DrawContext): Group[] {
+		const ids = new Set(visible.map((task) => task.id));
+		const orphan = (key: string) => !ids.has(draw.owners.get(key) ?? -1);
+		const asks: Live[] = draw.asks.rows.map((ask) => ({ kind: "ask" as const, key: `ask:${ask.id}`, ask })).filter((l) => orphan(l.key));
+		const runs: Live[] = [...(draw.live?.values() ?? [])]
+			.filter((run) => !ids.has(draw.runOwners.get(run.id) ?? -1))
+			.map((run) => ({ kind: "run" as const, key: `run:${run.id}`, run }));
+		const cars = new Map<string, Live[]>();
+		for (const car of draw.cars) {
+			const key = `car:${car.id}`;
+			if (!orphan(key)) continue;
+			const title = (car.item === undefined && car.group) || t("overlay.cars", OVERLAY_CARS);
+			cars.set(title, [...(cars.get(title) ?? []), { kind: "car", key, car }]);
+		}
+		return [
+			{ kind: "ask" as const, title: t("overlay.asks", OVERLAY_ASKS), rows: asks },
+			{ kind: "run" as const, title: t("overlay.others", OVERLAY_OTHERS), rows: runs },
+			...[...cars].map(([title, rows]) => ({ kind: "car" as const, title, rows })),
+		].filter((g) => g.rows.length > 0);
 	}
 
-	/** Live run rows bound to a task (empty when the host gave no rows). */
-	private children(task: Task, draw: DrawContext): RunRow[] {
+	/** Live rows of a task: the asks it is blocked on, its runs the host lists, then its cars (empty without either). */
+	private children(task: Task, draw: DrawContext): Live[] {
 		const { runs } = draw.bound.get(task.id) ?? history(undefined);
-		return runs.flatMap((r) => draw.live?.get(r.id) ?? []);
+		return [
+			...draw.asks.rows.flatMap((ask): Live[] => (draw.owners.get(`ask:${ask.id}`) === task.id ? [{ kind: "ask", key: `ask:${ask.id}`, ask }] : [])),
+			...runs.flatMap((r): Live[] => {
+				const run = draw.live?.get(r.id);
+				return run ? [{ kind: "run", key: `run:${run.id}`, run }] : [];
+			}),
+			...draw.cars.flatMap((car): Live[] => (draw.owners.get(`car:${car.id}`) === task.id ? [{ kind: "car", key: `car:${car.id}`, car }] : [])),
+		];
 	}
 
 	/**
 	 * Give `slots` rows to the candidates (in display order) by rank:
 	 * 1. in-progress task rows;
-	 * 2. live run rows, all of one task's together, with that task's row when it has none yet;
-	 * 3. the Other workers group, holding every live run whose task got no row;
-	 * 4. open tasks without a live run;
-	 * 5. completed tasks without a live run.
-	 * A task with live runs that missed rank 2 gets no row, so its runs join the group.
-	 * An in-progress task whose runs do not fit keeps its row and counts them.
-	 * `compact`: runs take no rows of their own, and the group takes one row.
+	 * 2. live rows (runs, cars and asks), all of one task's together, with that task's row when it has none yet;
+	 * 3. the groups, holding every live row whose task got no row;
+	 * 4. open tasks without a live row;
+	 * 5. completed tasks without a live row.
+	 * A task with live rows that missed rank 2 gets no row, so its rows join the groups.
+	 * An in-progress task whose rows do not fit keeps its row and counts its runs.
+	 * `compact`: live rows take no rows of their own, and each group takes one row.
 	 */
 	private allot(candidates: readonly Task[], slots: number, draw: DrawContext, compact: boolean): Allotment {
 		const chosen = new Set<Task>();
@@ -621,25 +727,28 @@ export class TodoOverlay {
 				withRuns.add(task);
 			}
 		}
-		const workers = this.groupCandidates([...chosen], draw);
-		const group = compact ? (workers.length && take(1) ? workers.length : 0) : groupFit(slots - used, workers.length);
-		if (!compact) used += group ? 1 + group : 0;
+		const groups = this.groupCandidates([...chosen], draw).map((group) => {
+			if (compact) return { group, n: take(1) ? group.rows.length : 0 };
+			const n = groupFit(slots - used, group.rows.length);
+			used += n ? 1 + n : 0;
+			return { group, n };
+		});
 		for (const done of [false, true])
 			for (const task of candidates)
 				if ((task.status === "completed") === done && !chosen.has(task) && !this.children(task, draw).length && take(1))
 					chosen.add(task);
-		return { shown: candidates.filter((task) => chosen.has(task)), withRuns, workers, group, left: slots - used };
+		return { shown: candidates.filter((task) => chosen.has(task)), withRuns, groups, left: slots - used };
 	}
 
 	/**
 	 * The allotment for `budget` rows, keeping one for the summary when anything of
-	 * `total` tasks or the group is left out. With nothing to summarize, the hint takes
-	 * its own row only when one is spare. When some live run would get no row of its
-	 * own, the panel switches to compact mode (each run joins its task's row, the group
-	 * takes one row). Sets `draw.others` to the group and `draw.compact`.
+	 * `total` tasks or the groups is left out. With nothing to summarize, the hint takes
+	 * its own row only when one is spare. When some live row would get no row of its
+	 * own, the panel switches to compact mode (each live row joins its task's row, each
+	 * group takes one row). Sets `draw.groups` and `draw.compact`.
 	 */
 	private budgeted(candidates: readonly Task[], total: number, budget: number, draw: DrawContext) {
-		const cut = (a: Allotment) => a.shown.length < total || a.group < a.workers.length;
+		const cut = (a: Allotment) => a.shown.length < total || a.groups.some((g) => g.n < g.group.rows.length);
 		const fit = (compact: boolean) => {
 			const first = this.allot(candidates, budget, draw, compact);
 			return cut(first)
@@ -648,18 +757,18 @@ export class TodoOverlay {
 		};
 		let { shown, summarized } = fit(false);
 		draw.compact =
-			shown.group < shown.workers.length ||
+			shown.groups.some((g) => g.n < g.group.rows.length) ||
 			shown.shown.some((task) => this.children(task, draw).length > 0 && !shown.withRuns.has(task));
 		if (draw.compact) ({ shown, summarized } = fit(true));
-		draw.others = shown.workers;
+		draw.groups = shown.groups;
 		const hint = this.keyHint();
 		const hintRow = !summarized && hint !== undefined && shown.left > 0;
-		return { shown, summarized, hintRow, hint, others: shown.workers.length };
+		return { shown, summarized, hintRow, hint };
 	}
 
 	/** End the frame's claim bookkeeping; a group folded into the summary keeps the tick so its count stays current. */
 	private endFrame(frame: Frame, draw: DrawContext) {
-		this.finishFrame(frame.drawn, frame.ticking || draw.others.length > 0, frame.marked);
+		this.finishFrame(frame.drawn, frame.ticking || draw.groups.length > 0, frame.marked);
 	}
 
 	/**
@@ -681,29 +790,40 @@ export class TodoOverlay {
 		}
 	}
 
+	/** One live row under the dim tree branch: a run as drawRun draws it, a car or an ask as sb words it. `grouped`: under the asks' heading. */
+	private drawLive(lines: string[], l: Live, branch: string, draw: DrawContext, frame: Frame, grouped = false) {
+		if (l.kind === "run") return this.drawRun(lines, l.run, branch, draw, frame);
+		frame.ticking = true;
+		lines.push(draw.truncate(draw.theme.fg("dim", branch) + liveText(l, draw, grouped)));
+	}
+
 	/**
-	 * A compact row: `left` (a task row or the group heading), then ` ⟶ ` and the most
-	 * active of `runs`, then `+N` for the others. The left part is cut first, so the run
-	 * stays whole. A row shown in full claims every run it stands for; one cut into the
-	 * run, or with no room for the left part, carries no marker and claims none.
-	 * In the group (`group`), a run of a hidden task carries its task number.
+	 * A compact row: `left` (a task row or a group heading), then ` ⟶ ` and the live row
+	 * that most wants attention, then `+N` for the others. The left part is cut first, so the
+	 * live row stays whole. A row shown in full claims every run it stands for; one cut into
+	 * the live row, or with no room for the left part, carries no marker and claims none.
+	 * In a group (`group`), a row of a hidden task carries its task number.
 	 */
-	private drawCompact(lines: string[], left: string, runs: RunRow[], draw: DrawContext, frame: Frame, group = false) {
-		const { theme, width, truncate, now, evidence } = draw;
-		const lead = mostActive(runs);
-		const owner = draw.runOwners.get(lead.id);
-		const right =
+	private drawCompact(lines: string[], left: string, rows: Live[], draw: DrawContext, frame: Frame, group?: Group) {
+		const { theme, width, truncate, evidence } = draw;
+		const lead = mostActive(rows);
+		const owner = lead.kind === "run" ? draw.runOwners.get(lead.run.id) : draw.owners.get(lead.key);
+		let right =
 			theme.fg("dim", " ⟶ ") +
 			(group && owner !== undefined ? `#${owner} ` : "") +
-			runLine(lead, now, (color, text) => theme.fg(color, text)) +
-			(runs.length > 1 ? theme.fg("dim", ` +${runs.length - 1}`) : "");
+			liveText(lead, draw, group?.kind === "ask") +
+			(rows.length > 1 ? theme.fg("dim", ` +${rows.length - 1}`) : "");
+		// sb's words can run long (a return's reason); a run row is short and stays whole to be claimed.
+		if (lead.kind !== "run" && visibleWidth(right) > width - COMPACT_MIN_LEFT)
+			right = truncateToWidth(right, Math.max(width - COMPACT_MIN_LEFT, 0), "…");
 		const room = width - visibleWidth(right);
 		const roomy = visibleWidth(left) <= room || room >= COMPACT_MIN_LEFT;
 		const line = roomy ? truncateToWidth(left, Math.max(room, 0), "…") + right : truncate(left + right);
 		const whole = roomy && visibleWidth(line) <= width;
+		const runs = runsOf(rows);
 		frame.ticking = true;
-		if (whole && evidence === "screen") {
-			const marked = line + this.marker(lead.id);
+		if (whole && runs.length && evidence === "screen") {
+			const marked = line + this.marker(lead.key);
 			for (const r of runs) frame.marked.set(r.id, marked);
 			lines.push(marked);
 		} else {
@@ -712,27 +832,36 @@ export class TodoOverlay {
 		}
 	}
 
+	/** The groups that got rows, each a heading then its rows; `closed` means the last one ends the panel. */
+	private drawGroups(groups: { group: Group; n: number }[], closed: boolean, draw: DrawContext, frame: Frame): string[] {
+		const drawn = groups.filter((g) => g.n > 0);
+		return drawn.flatMap(({ group, n }, i) => this.drawGroup(group, n, closed && i === drawn.length - 1, draw, frame));
+	}
+
 	/**
-	 * The Other workers group: a heading row, then this session's runs bound to no
-	 * task, drawn and claimed like bound run rows. `closed` means it ends the panel.
+	 * A group: a heading row, then its first `n` rows, runs drawn and claimed like bound run rows, and a row of a todo
+	 * that has no row with that todo's number. `closed` means it ends the panel.
 	 */
-	private drawGroup(runs: RunRow[], closed: boolean, draw: DrawContext, frame: Frame): string[] {
-		if (!runs.length) return [];
+	private drawGroup(group: Group, n: number, closed: boolean, draw: DrawContext, frame: Frame): string[] {
 		const { theme, truncate } = draw;
-		const heading = `${theme.fg("dim", closed ? "└─" : "├─")} ${theme.fg("muted", t("overlay.others", OVERLAY_OTHERS))}`;
+		const heading = `${theme.fg("dim", closed ? "└─" : "├─")} ${theme.fg("muted", group.title)}`;
 		if (draw.compact) {
 			const lines: string[] = [];
-			this.drawCompact(lines, heading, runs, draw, frame, true);
+			this.drawCompact(lines, heading, group.rows, draw, frame, group);
 			return lines;
 		}
 		const lines = [truncate(heading)];
-		for (const [j, r] of runs.entries())
-			this.drawRun(lines, r, `${closed ? " " : "│"}    ${j === runs.length - 1 ? "└" : "├"} ${draw.runOwners.has(r.id) ? `#${draw.runOwners.get(r.id)} ` : ''}`, draw, frame);
+		const rows = group.rows.slice(0, n);
+		for (const [j, l] of rows.entries()) {
+			const owner = l.kind === "run" ? draw.runOwners.get(l.run.id) : draw.owners.get(l.key);
+			const branch = `${closed ? " " : "│"}    ${j === rows.length - 1 ? "└" : "├"} ${owner !== undefined ? `#${owner} ` : ""}`;
+			this.drawLive(lines, l, branch, draw, frame, group.kind === "ask");
+		}
 		return lines;
 	}
 
 	/**
-	 * Draw task rows and, for the tasks in `withRuns`, their run rows; any other task
+	 * Draw task rows and, for the tasks in `withRuns`, their live rows; any other task
 	 * with live runs shows `· N runs`. `closed` means nothing follows, so the last
 	 * task row takes `└─`.
 	 */
@@ -748,14 +877,15 @@ export class TodoOverlay {
 		for (const [i, { task, row }] of entries.entries()) {
 			const { older } = draw.bound.get(task.id) ?? history(undefined);
 			const children = this.children(task, draw);
+			const runs = runsOf(children);
 			const fits = !children.length || withRuns.has(task);
 			const last = closed && i === entries.length - 1;
 			const display =
-				fits && children.some((r) => r.name === task.owner)
+				fits && runs.some((r) => r.name === task.owner)
 					? { ...task, owner: undefined }
 					: task;
-			const count = !fits
-				? ` · ${children.length} ${t("run.count", "runs")}`
+			const count = !fits && runs.length
+				? ` · ${runs.length} ${t("run.count", "runs")}`
 				: "";
 			const taskLine = `${theme.fg("dim", last ? "└─" : "├─")} ${formatPlanTaskLine(display, theme, showIds, row)}${count}${older && live ? ` +${older}` : ""}`;
 			if (fits && children.length && draw.compact) {
@@ -765,8 +895,8 @@ export class TodoOverlay {
 			lines.push(truncate(taskLine));
 			if (!fits) continue;
 			const indent = "  ".repeat(row?.depth ?? 0);
-			for (const [j, r] of children.entries())
-				this.drawRun(lines, r, `${last ? " " : "│"}    ${indent}${j === children.length - 1 ? "└" : "├"} `, draw, frame);
+			for (const [j, l] of children.entries())
+				this.drawLive(lines, l, `${last ? " " : "│"}    ${indent}${j === children.length - 1 ? "└" : "├"} `, draw, frame);
 		}
 		return lines;
 	}
