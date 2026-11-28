@@ -197,27 +197,35 @@ This namespace needs no new status, schema field, or contract version.
 
 ### Run spend (`metadata.herdr.spend`)
 
-Since 0.8.0, when a bound run ends, the ledger records what it spent on its task.
-The host announces the end with a custom message in the calling session: `subagent_result` when the run finished (its `details.elapsed` is the run's wall time in seconds) or `subagent_ping` when it stopped to ask.
-The ledger finds the task as the non-deleted one whose `metadata.herdr.runs` hold the message's `details.sessionFile`; when no task holds it, by `details.item` as a launch does (a uid, or `<session8>#<id>` of the calling session).
+Since 0.9.0, when a bound run ends, the ledger records what it spent on its task.
+A run's end arrives two ways:
+
+- the host's event `subagent:run-end` on `pi.events`, `{ v: 1, id, kind, name, item?, sessionFile?, elapsed? }`: `id` is the run id the launch acknowledged (`details.id`), `kind` is `"result"` or `"ping"`, and `elapsed` the run's wall time in seconds. The host sends it as it delivers the end, so an end still counts when its message never reaches the model (a steer cleared before the turn);
+- the custom message in the calling session: `subagent_result` when the run finished or `subagent_ping` when it stopped to ask. Its `details` name `sessionFile` and `item`, and `elapsed` when the host supplies it (Straw Boss adds `id` and a ping's `elapsed`).
+
+The ledger finds the task as the launch bound it: the non-deleted task whose `metadata.herdr.runs` hold the run id, else the end's `sessionFile`, else, by `item`, the task with that uid.
+A bare `<session8>#<id>` is never looked up by its number at the end: after `clear` or a branch switch the number names another task, and the launch's binding is what proves the identity.
 No match, several matches, or a deleted task leave the list unchanged.
 
-It reads that session file, sums the `usage` of every assistant turn in it (every branch: all of it was spent), and issues a normal guarded `update` of `metadata.herdr.spend`:
+It reads that session file and sums the `usage` of every assistant turn in it (every branch: all of it was spent), except the turns a fork copied from the launcher: a turn older than the file's `session` header, or one whose entry id the calling session holds.
+Then it issues a normal guarded `update` of `metadata.herdr.spend`, keeping every other `metadata` key:
 
 ```json
 {
   "input": 1500, "output": 300, "cacheRead": 3000, "cacheWrite": 0, "tokens": 4800, "cost": 0.75,
-  "ms": 125000, "runs": 1, "models": ["anthropic/claude-opus-5-5"],
+  "ms": 125000, "runs": 1, "models": ["anthropic/claude-opus-5-5"], "ended": ["0accb6d1-4380-4d51-a6d7-81dd0408d82f"],
   "sessions": [{ "session": "/path/child.jsonl", "input": 1500, "output": 300, "cacheRead": 3000, "cacheWrite": 0, "tokens": 4800, "cost": 0.75, "models": ["anthropic/claude-opus-5-5"] }]
 }
 ```
 
-The top-level figures are the task's totals over all its runs: `tokens` is pi's `totalTokens`, `cost` its `cost.total` in US dollars, `ms` the sum of the results' `elapsed`, `runs` the number of ended runs (results and pings), and `models` the `provider/model` ids seen, first seen first, at most eight.
+The top-level figures are the task's totals over all its runs: `tokens` is pi's `totalTokens`, `cost` its `cost.total` in US dollars, `ms` the sum of the ends' `elapsed`, `runs` the number of ended runs (results and pings), and `models` the `provider/model` ids seen, first seen first, at most eight.
+`ended` keeps the last 24 run ids counted, so the event and the message of one run count once.
 A resume continues the same session file, so the ledger replaces that session's figures with the file's new total instead of adding them again; `sessions` keeps up to twelve, newest last, and an older one stays in the totals but is no longer told apart.
 A file that cannot be read adds the run and its time, not tokens.
 A later launch keeps `spend` when it rebinds `metadata.herdr`.
 A refusal by a validator or guard leaves the list unchanged and appends `Todo spend: <reason>` to the message.
 The figures are what pi wrote in the child's transcript, bookkeeping rather than a bill. `get` shows them on a `spend:` line.
+A host that launches fallback models in one run delivers only the last attempt's file, so earlier attempts are not counted.
 
 ## 4. Change guards
 
