@@ -153,7 +153,7 @@ test("no todos and no runs: the panel stays unregistered", async (ctx) => {
 	m.overlay.dispose();
 });
 
-test("focus budget: tasks keep their rows, hidden workers join the summary in zh-TW", async (ctx) => {
+test("focus budget: the group outranks pending todos, hidden todos and workers join the summary in zh-TW", async (ctx) => {
 	env(ctx, { maxWidgetLines: 6 }, "zh_TW.UTF-8");
 	const BOSS = ["檢查畫面", "確認版面", "整理文件", "補測試", "更新說明", "檢查翻譯", "發布前檢查", "執行等待"];
 	const tasks = BOSS.map((subject, i) => ({ ...task(i + 1, i === 7 ? "in_progress" : "pending", i === 7 ? bound("fixture-test") : {}), subject }));
@@ -162,31 +162,29 @@ test("focus budget: tasks keep their rows, hidden workers join the summary in zh
 		"● Todos (0/8)",
 		"├─ ◐ #8 執行等待",
 		"│    └ fixture-test · astra · 執行中 6s",
-		"├─ ○ #1 檢查畫面",
-		"├─ ○ #2 確認版面",
-		"└─ +5 待處理、2 worker · ctrl+shift+t 完整",
+		"├─ 其他 worker",
+		"│    └ scout-x · astra · 執行中 5s",
+		"└─ +7 待處理、1 worker · ctrl+shift+t 完整",
 		"",
 	]);
 	m.overlay.dispose();
 });
 
 test("focus budget: the group shows the runs that fit and counts the rest", async (ctx) => {
-	env(ctx, { maxWidgetLines: 9 });
+	env(ctx, { maxWidgetLines: 7 });
 	const m = await mount([task(1, "in_progress", bound("a")), task(2), task(3)], () => ["a", "w", "x", "y", "z"].map((id) => run(id)));
 	const rows = m.render();
 	assert.deepEqual(rows, [
 		"● Todos (0/3)",
 		"├─ ◐ #1 t1",
 		"│    └ a · astra · running 5s",
-		"├─ ○ #2 t2",
-		"├─ ○ #3 t3",
 		"├─ Other workers",
 		"│    ├ w · astra · running 5s",
 		"│    └ x · astra · running 5s",
-		"└─ +2 workers · ctrl+shift+t full",
+		"└─ +2 pending, 2 workers · ctrl+shift+t full",
 		"",
 	]);
-	assert.equal(rows.length - 1, 9, "the cap holds");
+	assert.equal(rows.length - 1, 7, "the cap holds");
 	m.render();
 	assert.deepEqual(m.claims.at(-1), ["a", "w", "x"], "only painted rows are claimed; y and z stay with the host");
 	m.overlay.dispose();
@@ -194,8 +192,8 @@ test("focus budget: the group shows the runs that fit and counts the rest", asyn
 
 test("focus budget: one hidden worker reads singular", async (ctx) => {
 	env(ctx, { maxWidgetLines: 4 });
-	const m = await mount([task(1), task(2)], () => [run("w")]);
-	assert.deepEqual(m.render(), ["● Todos (0/2)", "├─ ○ t1", "├─ ○ t2", "└─ +1 worker · ctrl+shift+t full", ""]);
+	const m = await mount([task(1), task(2)], () => [run("w"), run("v")]);
+	assert.deepEqual(m.render(), ["● Todos (0/2)", "├─ Other workers", "│    └ w · astra · running 5s", "└─ +2 pending, 1 worker · ctrl+shift+t full", ""]);
 	m.overlay.dispose();
 });
 
@@ -270,8 +268,9 @@ test('"view": "full" lists the group after the tree, and counts what the budget 
 		"│    └ api-worker · astra · running 5s",
 		"├─ ◐ #2 t2",
 		"│    └ ui-worker · astra · running 42s",
-		"├─ ○ #3 t3",
-		"└─ +2 workers · ctrl+shift+t collapse",
+		"├─ Other workers",
+		"│    └ scout-x · astra · running 3s",
+		"└─ +1 more (1 pending), 1 worker · ctrl+shift+t collapse",
 		"",
 	]);
 	tight.overlay.dispose();
@@ -279,8 +278,8 @@ test('"view": "full" lists the group after the tree, and counts what the budget 
 
 test("full view: hidden tasks and hidden workers share the summary", async (ctx) => {
 	env(ctx, { view: "full", maxWidgetLines: 4 });
-	const m = await mount([1, 2, 3, 4, 5].map((id) => task(id)), () => [run("w")]);
-	assert.deepEqual(m.render(), ["● Todos (0/5)", "├─ ○ t1", "├─ ○ t2", "└─ +3 more (3 pending), 1 worker · ctrl+shift+t collapse", ""]);
+	const m = await mount([1, 2, 3, 4, 5].map((id) => task(id)), () => [run("w"), run("v")]);
+	assert.deepEqual(m.render(), ["● Todos (0/5)", "├─ Other workers", "│    └ w · astra · running 5s", "└─ +5 more (5 pending), 1 worker · ctrl+shift+t collapse", ""]);
 	m.overlay.dispose();
 });
 

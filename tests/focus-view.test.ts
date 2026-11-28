@@ -118,7 +118,7 @@ test("maxWidgetLines=3 with four in-progress tasks: the rest go into the summary
 	m.overlay.dispose();
 });
 
-test("several in-progress tasks with runs over the budget fold runs and summarize the rest", async (ctx) => {
+test("over the budget, run rows of in-progress tasks outrank the next pending tasks", async (ctx) => {
 	env(ctx, { maxWidgetLines: 7 });
 	const tasks = [task(1, "in_progress", bound("w1")), task(2, "in_progress", bound("w2a", "w2b")), task(3), task(4), task(5)];
 	const m = await mount(tasks, [run("w1"), run("w2a"), run("w2b")]);
@@ -127,10 +127,10 @@ test("several in-progress tasks with runs over the budget fold runs and summariz
 		"● Todos (0/5)",
 		"├─ ◐ #1 t1",
 		"│    └ w1 · astra · running 5s",
-		"├─ ◐ #2 t2 · 2 runs",
-		"├─ ○ #3 t3",
-		"├─ ○ #4 t4",
-		"└─ +1 pending · ctrl+shift+t full",
+		"├─ ◐ #2 t2",
+		"│    ├ w2a · astra · running 5s",
+		"│    └ w2b · astra · running 5s",
+		"└─ +3 pending · ctrl+shift+t full",
 		"",
 	]);
 	assert.equal(rows.length - 1, 7, "the cap holds");

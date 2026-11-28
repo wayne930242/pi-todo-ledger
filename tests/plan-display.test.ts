@@ -72,8 +72,9 @@ test("live projection draws only bound runs, then releases the claim on collapse
 	config({maxWidgetLines:5});
 	claims.length=0;
 	const limited = await surfaces(h,120,overlay,false);
-	assert.ok(limited.rows.includes('├─ ◐ #63 sb 計畫圖 · 2 個工作階段'));
-	assert.ok(claims.every(ids=>!ids.length));
+	// The run of #62 outranks the completed and pending rows; the two runs of #63 do not fit and are counted.
+	assert.deepEqual(limited.rows,["● Todos (1/4) · fan-out", "├─ ◐ #62 ledger 0.6.0", "│    └ todograph-build · astra · 執行中 4m", "├─ ◐ #63 sb 計畫圖 · 2 個工作階段", "└─ +2 項未顯示 (1 已完成, 1 待處理) · ctrl+shift+t 收合", ""]);
+	assert.deepEqual(claims,[["todograph-build"],[]],"a counted run is never claimed");
 });
 
 test("each get/list/create/update task exposes its stable uid to the caller and in the result card", async () => {

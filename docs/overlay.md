@@ -34,18 +34,18 @@ The panel opens in the focus view. It shows what is being worked on and what com
 └─ +5 待處理 · ctrl+shift+t 完整
 ```
 
-Rows come in this order, until the row budget runs out:
+Rows are drawn in this order:
 
 1. the heading;
 2. every task in progress, each followed by its run rows;
 3. the next two open tasks in display order, or the next three when nothing is in progress;
-4. the [Other workers](#other-workers) group, with the rows the tasks and their runs leave;
-5. completed tasks from the current turn, only if rows are left after the group; they are drawn above the group, but get their rows after it;
+4. completed tasks from the current turn;
+5. the [Other workers](#other-workers) group;
 6. one summary row counting the hidden tasks in progress, pending, and completed, then the hidden other workers, in that order, such as `+1 in progress, 5 pending, 2 completed, 2 workers` (`+1 進行中、5 待處理、2 已完成、2 worker` in zh-TW). Zero counts are left out, and with nothing hidden there is no summary row.
 
 The summary row ends with a dim hint that names the panel key and the state it switches to next; see [Switching views](#switching-views).
 
-`maxWidgetLines` is a hard cap here too: tasks in progress that do not fit are counted in the summary, and run rows that do not fit fold into `· N runs`.
+`maxWidgetLines` is a hard cap here too. Rows 2 to 5 share the budget by [rank](#overflow): run rows and the group come before the next open tasks, tasks in progress that do not fit are counted in the summary, and run rows that do not fit fold into `· N runs`.
 Rows are flat, so the `⛓` tail lists every unfinished blocker of a task; `⏸`, owners, and the other marks are the same as in the full view.
 Pi's tool-output expansion mode lifts the row cap but keeps this selection. Press the panel key for the tree below, set `"view": "full"` (see [configuration.md](./configuration.md#view)) to start there, or use `/todos` to see everything once.
 
@@ -127,8 +127,8 @@ The group follows the task rows. It includes unbound runs and runs whose task is
 
 The group follows the row budget:
 
-- In the focus view, tasks in progress, the next tasks and their runs come first. The group gets the rows left: its heading and as many runs as fit, or nothing when fewer than two rows are left. The runs that do not fit are added to the summary row as `+2 workers` (`+2 worker` in zh-TW), or after the task counts, as in `+5 待處理、2 worker`.
-- In the full view, the group follows the tree and lists every run within `maxWidgetLines`; the rest are counted in the summary row, as in `+3 more (3 pending), 2 workers`.
+- In both views, tasks in progress and their runs come first, then the group, then the pending and completed tasks without a live run (see [Overflow](#overflow)). The group gets its heading and as many runs as fit, or nothing when fewer than two rows are left.
+- The runs that do not fit are added to the summary row as `+2 workers` (`+2 worker` in zh-TW), or after the task counts, as in `+5 待處理、2 worker` in the focus view and `+3 more (3 pending), 2 workers` in the full view.
 - In the collapsed view, the closing row counts the group before the key hint: `└─ +2 worker · ctrl+shift+t 焦點`.
 
 The panel claims a group row the way it claims a bound run row: only a row painted in full, checked by its exact line in the fullscreen layout. A row cut by the width, clipped by the layout, covered by a popup, or folded into the summary stays unclaimed, so the Subagents widget keeps showing that run. When no ledger claims a run, the host's own widget is the fallback that shows it.
@@ -136,15 +136,25 @@ The panel claims a group row the way it claims a bound run row: only a row paint
 ## Overflow
 
 The content-row budget is `maxWidgetLines` (default `12`), and the heading counts
-against it. The focus view applies it as described [above](#focus-view). In the
-full view, when there are more tasks than fit:
+against it. When the rows do not all fit, one row is reserved for the summary,
+and both views hand out the rest by rank, in display order within each rank:
 
-1. one row is reserved for the summary line;
-2. completed tasks are dropped first, newest first — the oldest completed rows
-   are the last completed rows to go;
-3. if the unfinished tasks alone still overflow, the tail of that list is
-   truncated;
-4. the last row becomes `+N more (X completed, Y pending)`.
+1. task rows of the tasks in progress;
+2. live run rows, all runs of one task together, with that task's row when it has
+   none yet; a task in progress whose runs do not fit keeps its row and shows
+   `· N runs`;
+3. the [Other workers](#other-workers) group, holding the live runs whose task got no row;
+4. open tasks with no live run;
+5. completed tasks with no live run, oldest first.
+
+Rows keep their display order whatever their rank: the full view still draws the
+tree, and the focus view its flat list. The focus view ranks only the tasks it
+selects (in progress, the next open ones, and this turn's completed ones). In the
+full view the last row becomes `+N more (X completed, Y in progress, Z pending)`,
+leaving out zero counts.
+
+Ranking run rows above open tasks keeps the workers under their todos, so the
+panel can claim them and the Subagents widget lists only what is left.
 
 In the full view, Pi's tool-output expansion shortcut (`ctrl+o` by default)
 expands the widget to show every task. Collapsing Pi's tool output reapplies the configured

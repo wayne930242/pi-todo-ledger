@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Over the row budget, the panel ranks the rows: task rows in progress, then their live run rows, then the `Other workers` group, then open and completed tasks with no live run. A long list no longer pushes every worker off the panel: run rows stay under their todos and are claimed, so the host's Subagents box lists only the rest. Both views use the ranking; rows keep their tree or list order.
+- The full view's summary counts hidden tasks in progress apart from pending ones, as in `+63 more (54 completed, 1 in progress, 8 pending)`.
+
 ## 0.8.0
 
 - `todo` `create` and `update` take `waitsOn` (what the task waits on, such as `trains to end`) and `until` (a future ISO time) to mark a task as waiting; `update` with `null` clears either. They write the `metadata.waitsOn` and `metadata.until` keys the panel, `/todos`, and tool results already show as `⏸`, so the `todo/v1` snapshot keeps its shape and older lists read as before.
