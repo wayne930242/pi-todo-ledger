@@ -14,6 +14,7 @@ import {
 import { isTransitionValid } from "./invariants.ts";
 import type { TaskState } from "./state.ts";
 import { detectCycle } from "./task-graph.ts";
+import { validateWaitFields, withoutWait, withWaitFields } from "./wait-mark.ts";
 
 /**
  * Reducer outcome. Closed tagged union — adding a new action requires extending
@@ -76,6 +77,8 @@ const BATCH_ITEM_FIELDS = [
 	"anchor",
 	"graph",
 	"evidence",
+	"waitsOn",
+	"until",
 ] as const;
 
 /**
@@ -101,6 +104,8 @@ function validateLedgerFields(spec: TaskMutationParams, now: string, clearable =
 	if (spec.anchor !== undefined && (typeof spec.anchor !== "string" || !spec.anchor.trim())) {
 		return "anchor must be a non-empty string";
 	}
+	const waitError = validateWaitFields(spec, now, clearable);
+	if (waitError) return waitError;
 	if (spec.evidence !== undefined) {
 		if (!Array.isArray(spec.evidence)) return "evidence must be a list";
 		for (let i = 0; i < spec.evidence.length; i++) {
@@ -167,7 +172,8 @@ function buildCreatedTask(id: number, spec: TaskMutationParams, subject: string,
 	if (spec.activeForm) newTask.activeForm = spec.activeForm;
 	if (spec.blockedBy?.length) newTask.blockedBy = [...spec.blockedBy];
 	if (spec.owner) newTask.owner = spec.owner;
-	if (spec.metadata) newTask.metadata = { ...spec.metadata };
+	const metadata = withWaitFields(spec.metadata ? { ...spec.metadata } : undefined, spec);
+	if (metadata) newTask.metadata = metadata;
 	if (spec.points !== undefined) newTask.points = spec.points;
 	if (spec.anchor !== undefined) newTask.anchor = spec.anchor;
 	if (isGraph(spec.graph)) newTask.graph = spec.graph;
@@ -320,13 +326,15 @@ export function applyTaskMutation(
 				params.points !== undefined ||
 				params.anchor !== undefined ||
 				params.graph !== undefined ||
+				params.waitsOn !== undefined ||
+				params.until !== undefined ||
 				(params.evidence && params.evidence.length > 0) ||
 				(params.addBlockedBy && params.addBlockedBy.length > 0) ||
 				(params.removeBlockedBy && params.removeBlockedBy.length > 0);
 			if (!hasMutation)
 				return errorResult(
 					state,
-					"update requires at least one mutable field: subject, description, activeForm, status, owner, metadata, points, anchor, graph, evidence, addBlockedBy, or removeBlockedBy",
+					"update requires at least one mutable field: subject, description, activeForm, status, owner, metadata, points, anchor, graph, evidence, waitsOn, until, addBlockedBy, or removeBlockedBy",
 				);
 			const ledgerError = validateLedgerFields(params, now, true);
 			if (ledgerError) return errorResult(state, ledgerError);
@@ -366,6 +374,9 @@ export function applyTaskMutation(
 				}
 				newMetadata = Object.keys(merged).length ? merged : undefined;
 			}
+			newMetadata = withWaitFields(newMetadata, params);
+			// Finishing a task ends its wait.
+			if (newStatus === "completed" || newStatus === "deleted") newMetadata = withoutWait(newMetadata);
 
 			const updated: Task = { ...current, status: newStatus };
 			if (params.subject !== undefined) updated.subject = params.subject;
@@ -428,6 +439,9 @@ export function applyTaskMutation(
 			const current = state.tasks[idx];
 			if (current.status === "deleted") return errorResult(state, `#${current.id} is already deleted`);
 			const updated: Task = { ...current, status: "deleted" };
+			const metadata = withoutWait(current.metadata);
+			if (metadata) updated.metadata = metadata;
+			else delete updated.metadata;
 			const newTasks = [...state.tasks];
 			newTasks[idx] = updated;
 			return {

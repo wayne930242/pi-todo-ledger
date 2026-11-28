@@ -118,6 +118,8 @@ export interface CreateTaskInput {
 	anchor?: string;
 	graph?: string;
 	evidence?: EvidenceInput[];
+	waitsOn?: string;
+	until?: string;
 }
 
 export interface TaskMutationParams {
@@ -136,6 +138,10 @@ export interface TaskMutationParams {
 	/** A graph name; `null` clears it on update. */
 	graph?: string | null;
 	evidence?: EvidenceInput[];
+	/** What the task waits on, stored as `metadata.waitsOn`; `null` clears it on update. */
+	waitsOn?: string | null;
+	/** An ISO time the task waits until, stored as `metadata.until`; `null` clears it on update. */
+	until?: string | null;
 	id?: number;
 	path?: string;
 	session?: string;
@@ -164,6 +170,10 @@ const EvidenceInputSchema = Type.Object({
 
 const EvidenceSchema = (description: string) => Type.Array(EvidenceInputSchema, { description });
 
+const WAITS_ON_TEXT =
+	"What this task waits on (a person, CI, a train to end); it shows ⏸, and close and stale reminders leave the task alone while it waits. Completing or deleting the task clears it";
+const UNTIL_TEXT = "ISO 8601 time the task waits until, e.g. 2027-01-15T09:00:00+08:00; once it passes, an until-only wait ends";
+
 const CreateTaskInputSchema = Type.Object({
 	subject: Type.String({ description: "Task subject line" }),
 	description: Type.Optional(Type.String({ description: "Long-form task description" })),
@@ -188,6 +198,8 @@ const CreateTaskInputSchema = Type.Object({
 	anchor: Type.Optional(AnchorSchema("The check that shows this task is done, e.g. a test command")),
 	graph: Type.Optional(Type.String()),
 	evidence: Type.Optional(EvidenceSchema("Check runs already recorded for this task")),
+	waitsOn: Type.Optional(Type.String({ minLength: 1, description: WAITS_ON_TEXT })),
+	until: Type.Optional(Type.String({ description: UNTIL_TEXT })),
 });
 
 export const TodoParamsSchema = Type.Object({
@@ -248,6 +260,10 @@ export const TodoParamsSchema = Type.Object({
 			"Check runs to record: the initial list on create; on update, appended to the task's evidence (never replaced or removed)",
 		),
 	),
+	waitsOn: Type.Optional(
+		Type.Union([Type.String({ minLength: 1 }), Type.Null()], { description: `${WAITS_ON_TEXT}; null clears (update)` }),
+	),
+	until: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: `${UNTIL_TEXT}; null clears (update)` })),
 	id: Type.Optional(
 		Type.Number({
 			description: "Task id (required for update, get, delete)",

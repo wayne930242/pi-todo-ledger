@@ -70,7 +70,7 @@ The full view (`"view": "full"`) draws the whole dependency tree:
   Completed and deleted subjects render dim and struck through.
 - **activeForm** — appended dim in parentheses, only while the task is
   `in_progress` and only when it differs from the subject (ignoring leading and trailing spaces).
-- **Waiting** — `⏸` replaces the open-task glyph when `metadata.waitsOn` names a party or `metadata.until` is an ISO time in the future. The row shows the party, the local deadline, or both. An elapsed deadline no longer marks a task as waiting.
+- **Waiting** — `⏸` replaces the open-task glyph when `metadata.waitsOn` names a party or `metadata.until` is an ISO time in the future (the `todo` fields `waitsOn` and `until` write these keys). The row shows the party, the local deadline, or both. An elapsed deadline no longer marks a task as waiting.
 - **Owner** — `@owner` follows the subject in muted text.
 - **Dependencies** — open rows nest under the first unfinished `blockedBy` id; siblings are visited in id order. Other unfinished blockers appear in the `⛓ #1,#2` tail. If another prerequisite interrupts a branch, `↳ #N` names the parent the row returns to.
 - **Graph** — the heading names the graph when all open tasks share it; otherwise a root shows its own graph, if set.

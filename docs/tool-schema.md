@@ -39,6 +39,8 @@ todo({
     anchor?: string,
     graph?: string,
     evidence?: Evidence[],
+    waitsOn?: string,
+    until?: string,
   }>,
 
   // create + update
@@ -56,6 +58,8 @@ todo({
     result: "pass" | "fail",
     at?: string,                      // ISO 8601; stored in UTC; defaults to the time of the call
   }>,
+  waitsOn?: string | null,            // what the task waits on; stored as metadata.waitsOn; null clears (update only)
+  until?: string | null,              // future ISO 8601 date or time; stored as metadata.until; null clears (update only)
 
   // update-only
   addBlockedBy?: number[],            // additive merge into blockedBy
@@ -75,7 +79,7 @@ todo({
 `create` takes either `subject` (one task) or `tasks[]` (several independent
 tasks). Passing both is rejected, even with a blank `subject`. Each item carries
 its own `description`, `activeForm`, `blockedBy`, `owner`, `metadata`, `points`,
-`anchor`, `graph` and `evidence`; the same
+`anchor`, `graph`, `evidence`, `waitsOn` and `until`; the same
 fields at the top level of a batch are rejected rather than dropped. The batch is validated first and committed
 together: one bad item fails the whole call and leaves the list unchanged.
 Items in `tasks[]` cannot `blockedBy` each other; those ids do not exist until
@@ -97,6 +101,14 @@ with a `metadata.graph` that holds a graph name, so a reload does not bring it b
 `graph` accepts only `single-loop`, `fan-out/fan-in`, and `orchestrator-worker`.
 On replay and import, a task without `graph` whose `metadata.graph` holds one of
 these names is read with that graph; its metadata is kept as it was.
+
+`waitsOn` and `until` mark an open task as waiting. They write `metadata.waitsOn`
+(trimmed) and `metadata.until` (as given), the keys the panel, `/todos`, and other
+extensions read, so the snapshot keeps its v1 shape; like `graph`, their schema admits
+`null`, which on `update` removes the key. They apply after `metadata`, so they win
+over the same key passed there. `until` must be an ISO 8601 date or date-time after
+the call. Setting `status` to `completed` or `deleted`, or `delete`, removes both
+keys, however they were written.
 
 `import` reads `{ "v": 1, "tasks": [...], "nextId": n }` from a JSON file and keeps every task field as stored.
 With `session` instead of `path`, it reads the newest valid `todo/v1` entry on the
@@ -217,17 +229,18 @@ that it was a no-op instead of a fresh `Updated #N`.
 | `subject required for create` | `create` without a non-blank `subject` and without `tasks[]`. |
 | `create requires subject or tasks[], not both` | `create` with both `subject` and `tasks[]`. |
 | `tasks[] must be non-empty` | `create` with `tasks: []`. |
-| `create with tasks[] takes <fields> on each item, not at the top level` | `create` with `tasks[]` and a top-level `description`, `activeForm`, `blockedBy`, `owner`, `metadata`, `points`, `anchor`, `graph`, or `evidence`. |
+| `create with tasks[] takes <fields> on each item, not at the top level` | `create` with `tasks[]` and a top-level `description`, `activeForm`, `blockedBy`, `owner`, `metadata`, `points`, `anchor`, `graph`, `evidence`, `waitsOn`, or `until`. |
 | `tasks[N]: subject required for create` | A batch item with a blank or missing subject. |
 | `blockedBy: #N not found` | `create` naming an unknown dependency. |
 | `blockedBy: #N is deleted` | `create` naming a tombstoned dependency. |
 | `blockedBy: #N is another item in this batch; create the prerequisite first, then the dependent with blockedBy` | A `tasks[]` item naming a sibling that this call would assign. |
 | `id required for update` / `get` / `delete` | `id` omitted. |
 | `#N not found` | No task with that id. |
-| `update requires at least one mutable field: subject, description, activeForm, status, owner, metadata, points, anchor, graph, evidence, addBlockedBy, or removeBlockedBy` | `update` with only an `id`. |
+| `update requires at least one mutable field: subject, description, activeForm, status, owner, metadata, points, anchor, graph, evidence, waitsOn, until, addBlockedBy, or removeBlockedBy` | `update` with only an `id`. |
 | `points must be a number from 0 to 10` | `points` out of range; prefixed `tasks[N]: ` for a batch item. |
 | `anchor must be a non-empty string` | Blank `anchor`. |
 | `graph must be single-loop, fan-out/fan-in, or orchestrator-worker` | Any other `graph`, or `null` on create; on update the message adds ` (null clears)`; prefixed `tasks[N]: ` for a batch item. |
+| `waitsOn must be a non-empty string` / `until must be an ISO 8601 date or time` / `until must be in the future` | A blank `waitsOn`, an `until` that is not an ISO date or date-time or not after the call, or `null` on create; on update the first two add ` (null clears)`; prefixed `tasks[N]: ` for a batch item. |
 | `path or session required for import` / `import takes path or session, not both` | `import` with neither or both. |
 | `no session <id> in <dirs>` / `session <id> is ambiguous: <ids>` / `session <id> has no todo/v1 snapshot` | `import` with a `session` that matches no session, several, or one without a snapshot (flagged `isError`, like every import failure). |
 | `evidence[N]: command must be a non-empty string` / `result must be "pass" or "fail"` / `sha must be a string` / `at must be an ISO 8601 time` / `at must not be in the future` | A malformed evidence item; `at` may lie at most five minutes after the call. |
@@ -248,11 +261,12 @@ rejections keep rpiv-todo's behaviour and are not flagged.
 
 ## Prompt guidance
 
-The tool ships a `promptSnippet` and ten `promptGuidelines` bullets telling the
+The tool ships a `promptSnippet` and twelve `promptGuidelines` bullets telling the
 model when to open a list, to create independent tasks in one `tasks[]` call,
 to keep exactly one task `in_progress`, to mark work completed immediately
 rather than in batches, never to complete a task with failing tests, and the
-literal `update {id, status}` call shape for changing a task's status; the tenth
-describes `points`, `anchor`, and `evidence`. Both are
+literal `update {id, status}` call shape for changing a task's status; the
+eleventh describes `points`, `anchor`, and `evidence`, and the twelfth how to mark
+a task waiting with `waitsOn` and `until`. Both are
 overridable — see
 [configuration.md](./configuration.md#guidance).

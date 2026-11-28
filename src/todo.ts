@@ -69,6 +69,7 @@ export const DEFAULT_PROMPT_GUIDELINES: string[] = [
 	"list hides tombstoned (deleted) tasks by default; pass includeDeleted:true to see them. Pass status to filter by a single status.",
 	"Subject must be short and imperative (e.g. 'Research existing tool'); description is for long-form detail. activeForm is a present-continuous label shown while in_progress.",
 	"Optional bookkeeping fields: points (effort, 0 to 10), anchor (the check that shows the task is done, e.g. a test command), and evidence (runs of checks, each {command, sha?, result: pass|fail, at?}). On update, points and anchor replace; evidence is appended, never replaced.",
+	"When a task waits on something outside your control (a person, CI, a train, a release window), mark it with waitsOn (what it waits on) and, if known, until (ISO time); it shows ⏸ and reminders leave it alone while it waits. Clear it with waitsOn: null when the wait ends; completing the task clears it too.",
 ];
 
 export function registerTodoTool(pi: ExtensionAPI, finish: FinishCall): void {

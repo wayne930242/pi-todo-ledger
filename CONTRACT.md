@@ -152,6 +152,20 @@ Error: metadata.<ns> refused #<id>: <reason>
 `clear`, `list`, and `get` run no validators.
 Namespaces nobody registered pass unchecked.
 
+### Wait marks (`metadata.waitsOn`, `metadata.until`)
+
+Since 0.8.0 the `todo` tool's `waitsOn` and `until` fields write these two top-level metadata keys; earlier releases already read them, and an agent may still set them through `metadata`.
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `waitsOn` | non-empty string | What the task waits on: a person, CI, a train to end. |
+| `until` | ISO 8601 date or date-time | When the task waits until. |
+
+A task waits while its `status` is `pending` or `in_progress` and either `waitsOn` is a non-blank string or `until` is a time after now.
+A reader that judges open work, such as a close or stale reminder, treats a waiting task as held up rather than forgotten.
+An `update` to `completed` or `deleted`, and `delete`, remove both keys; a namespace validator registered for either key sees the removal.
+The snapshot version stays 1.
+
 ### Optional Herdr launch identity (`metadata.herdr`)
 
 When `pi-herdr-agents` acknowledges a `subagent` launch with `details.status: "started"` and echoes the call's `item`, the ledger looks up that task in the **calling session**.

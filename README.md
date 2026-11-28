@@ -55,9 +55,12 @@ The panel claims every run row it paints, so the host's Subagents box shows only
 See [docs/overlay.md](docs/overlay.md#other-workers).
 
 `/todos` and the panel's full view indent each open task under its first unfinished blocker; the panel's default focus view lists tasks flat and names every unfinished blocker after the subject. Both show the owner as `@owner`.
-To mark a task as waiting for someone, set `metadata.waitsOn` to their name; to defer it until a particular time, set `metadata.until` to an ISO timestamp, e.g. `2027-01-15T09:00:00+08:00`.
-An open task shows `⏸` with the name or the future deadline in local time.
-These keys are display conventions: they neither schedule a wake-up nor change the task's `status` or the `todo/v1` contract.
+To mark a task as waiting, pass `waitsOn` with what it waits on (a person, CI, `trains to end`); to defer it until a particular time, pass `until` with an ISO timestamp, e.g. `2027-01-15T09:00:00+08:00`.
+`create` and `update` take both, `update` with `null` clears one, and completing or deleting the task clears both.
+They are stored as `metadata.waitsOn` and `metadata.until`, which earlier releases already read, so setting those keys directly still works.
+An open task shows `⏸` with what it waits on or the future deadline in local time.
+A wait neither schedules a wake-up nor changes the task's `status`; it tells readers such as anchorloop's close guard and sb's board that the task is held up, not forgotten.
+A wait with only `until` ends when that time passes; a `waitsOn` wait lasts until it is cleared.
 
 `graph` names the work graph of the plan a task belongs to, one of `single-loop`, `fan-out/fan-in`, and `orchestrator-worker`; any other value is refused.
 One session often runs several plans, so each task carries its own.

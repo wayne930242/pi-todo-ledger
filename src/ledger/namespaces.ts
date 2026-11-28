@@ -6,6 +6,7 @@
  */
 
 import type { Op } from "../state/state-reducer.ts";
+import { WAIT_KEYS } from "../state/wait-mark.ts";
 import type { TaskState } from "../state/state.ts";
 import type { Task, TaskMutationParams } from "../tool/types.ts";
 import { CONTRACT_VERSION, type NamespaceOp, type NamespaceValidator, NAMESPACE_EVENT } from "./contract.ts";
@@ -25,6 +26,11 @@ function metadataKeys(value: unknown): string[] {
 	return isRecord(value) ? Object.keys(value) : [];
 }
 
+/** The wait keys a call writes through its `waitsOn` and `until` fields, or all of them when it ends the task's wait. */
+function waitKeys(spec: unknown, ends = false): string[] {
+	return WAIT_KEYS.filter((key) => ends || (isRecord(spec) && spec[key] !== undefined));
+}
+
 /**
  * The tasks a committed `op` would create, update, or delete, read from the
  * reducer's proposed state. Reads, `clear`, errors, and no-effect updates
@@ -40,16 +46,17 @@ export function changedTasks(op: Op, params: TaskMutationParams, next: TaskState
 			return op.taskIds.flatMap((id, i) => {
 				const task = find(id);
 				const spec = items ? items[i] : params;
-				return task ? [{ task, op: "create" as const, touched: metadataKeys(spec?.metadata) }] : [];
+				return task ? [{ task, op: "create" as const, touched: [...metadataKeys(spec?.metadata), ...waitKeys(spec)] }] : [];
 			});
 		}
 		case "update": {
 			const task = op.changed ? find(op.id) : undefined;
-			return task ? [{ task, op: "update", touched: metadataKeys(params.metadata) }] : [];
+			const ends = op.toStatus === "completed" || op.toStatus === "deleted";
+			return task ? [{ task, op: "update", touched: [...metadataKeys(params.metadata), ...waitKeys(params, ends)] }] : [];
 		}
 		case "delete": {
 			const task = find(op.id);
-			return task ? [{ task, op: "delete", touched: [] }] : [];
+			return task ? [{ task, op: "delete", touched: waitKeys(params, true) }] : [];
 		}
 		case "list":
 		case "get":
