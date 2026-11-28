@@ -6,7 +6,7 @@ import { history } from "../ledger/herdr-runs.ts";
 import { t } from "../state/i18n-bridge.ts";
 import type { Task } from "../tool/types.ts";
 import { type liveRows, type RunRow, runState } from "./live-runs.ts";
-import { type AskRow, type AskRows, askTodo, type CarRow, carNames } from "./sb-rows.ts";
+import { type AskRow, type AskRows, askNames, type CarRow, carNames } from "./sb-rows.ts";
 
 const OVERLAY_OTHERS = "Other workers";
 const OVERLAY_ASKS = "Waiting on you";
@@ -71,8 +71,8 @@ export function attribute(tasks: readonly Task[], cars: readonly CarRow[], asks:
 		if (owner) owners.set(`car:${c.id}`, owner.id);
 	}
 	for (const a of asks.rows) {
-		const id = askTodo(a, asks.session);
-		if (id !== undefined && tasks.some((task) => task.id === id)) owners.set(`ask:${a.id}`, id);
+		const owner = tasks.find((task) => askNames(a, task, asks.session));
+		if (owner) owners.set(`ask:${a.id}`, owner.id);
 	}
 	return owners;
 }

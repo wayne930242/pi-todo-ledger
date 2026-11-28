@@ -34,8 +34,11 @@ export interface AskRow {
 	since: number;
 	/** The asker is this session or one of its subagents. */
 	mine: boolean;
-	/** The todo it blocks: the session whose list holds it (as `AskRows.session` names this one), and its id there. */
-	item?: { session: string; id: number };
+	/**
+	 * The todo it blocks: the session whose list holds it (as `AskRows.session` names this one), its id there, and its uid when sb bound
+	 * it with one. The ledger reuses ids after `clear`, so only the uid tells that todo from a new one.
+	 */
+	item?: { session: string; id: number; uid?: string };
 }
 export interface AskRows {
 	/** This session's id as `item.session` names it; an older sb leaves it out, and then no ask is put under a todo. */
@@ -80,10 +83,13 @@ export function askRows(query?: SbQuery): AskRows {
 	return { ...(str(answer?.session) && answer.session ? { session: answer.session } : {}), rows };
 }
 
-/** Whether an ask names a todo of this session, and which. */
-export function askTodo(ask: AskRow, session: string | undefined): number | undefined {
+/**
+ * Whether an ask blocks this todo of this session: its item names this session, the todo's id, and the uid the todo has
+ * (carrows-review-F001). An item with no uid, or a todo with none, cannot be told from a todo that took the id later: neither matches.
+ */
+export function askNames(ask: AskRow, task: { id: number; uid?: string }, session: string | undefined): boolean {
 	const item = ask.item;
-	return session && item && item.session === session && Number.isInteger(item.id) ? item.id : undefined;
+	return !!session && !!item && item.session === session && item.id === task.id && typeof item.uid === "string" && item.uid === task.uid;
 }
 
 /** Whether a car row's `item` names this todo: its uid, or `<session8>#<id>` (sb places cars only by this session's todos). */
@@ -126,5 +132,5 @@ export function askLine(ask: AskRow, now: number, fg: Fg = plain, grouped = fals
 export function sbSignature(query?: SbQuery): string {
 	const cars = carRows(query).map((c) => [c.id, c.item, c.group, c.phase, c.tone, c.line, c.wait, c.since].join("\u0001"));
 	const asks = askRows(query);
-	return JSON.stringify([cars, asks.session, asks.rows.map((a) => [a.id, a.subject, a.item?.session, a.item?.id])]);
+	return JSON.stringify([cars, asks.session, asks.rows.map((a) => [a.id, a.subject, a.item?.session, a.item?.id, a.item?.uid])]);
 }

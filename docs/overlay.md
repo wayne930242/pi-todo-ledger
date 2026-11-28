@@ -161,7 +161,8 @@ Without sb, or with an sb that does not answer them, nothing of them shows and t
   dropped one `error`. A car with no todo goes in the group sb names, `其他車廂` / `Other cars`, or `火車` / `Trains` for the trains an
   integrator received cars for.
 - A question row, `⏸ 等你：<question> 4m` (`⏸ waits on you: …`), goes under the todo it blocks: the todo sb bound when the question was
-  asked. The question is cut at 48 columns; `/boss asks` prints it whole. Only this session's questions and its subagents' show. One
+  asked, by its id and uid. The uid must still be that todo's: after `clear` a new todo can take the id, and a question bound to the
+  old one, or bound with no uid, goes in the group instead. The question is cut at 48 columns; `/boss asks` prints it whole. Only this session's questions and its subagents' show. One
   with no todo here goes in a `等你` / `Waiting on you` group, the first group, as `⏸ <question> 4m`. Another session's questions
   are on `/boss asks` and sb's GUI.
 - Car and question rows rank with run rows (see [Overflow](#overflow)): a todo's live rows are its questions, its runs, then its cars, all

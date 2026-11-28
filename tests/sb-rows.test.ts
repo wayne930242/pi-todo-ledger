@@ -61,7 +61,8 @@ async function mount(tasks: Spec[], runs: () => RunRow[], sb: Sb | undefined, op
 		sb &&
 			((event, p) => {
 				const probe = p as { rows?: unknown };
-				if (event === CAR_ROWS_EVENT && sb.cars) probe.rows = sb.cars();
+				if (event === CAR_ROWS_EVENT && sb.cars)
+					probe.rows = { ...(sb.cars() as object), ...(sb.session === null ? {} : { session: sb.session ?? ME }) };
 				if (event === ASK_ROWS_EVENT && sb.asks)
 					probe.rows = { ...(sb.asks() as object), ...(sb.session === null ? {} : { session: sb.session ?? ME }) };
 			}),
@@ -85,12 +86,12 @@ const v1 = (rows: unknown[]) => ({ version: 1, rows });
 // A coordinator main: #1 sends a car and has a worker, #2 waits on the boss, #3 is next.
 const TASKS = () => [
 	task(1, "in_progress", { uid: "t_aaaaaaaaaa", subject: "MP-1 ship the order list", ...bound("list-worker") }),
-	task(2, "in_progress", { subject: "MP-2 pick the deploy window" }),
+	task(2, "in_progress", { uid: "t_bbbbbbbbbb", subject: "MP-2 pick the deploy window" }),
 	task(3),
 ];
 const SB: Sb = {
 	cars: () => v1([car("p/fe2-abc#1", { item: "t_aaaaaaaaaa", wait: "waits 1127j", tone: "wait" }), car("sent:v3-def", { tickets: ["MP-9"], phase: "sent", tone: "wait", line: "📮 sent", group: "Other cars", wait: "not received yet · MP-9", since: NOW - 3 * 60_000 })]),
-	asks: () => v1([ask("Q3", { item: { session: ME, id: 2 } }), ask("Q4", { subject: "Approve the key", mine: false, asker: "box-2" })]),
+	asks: () => v1([ask("Q3", { item: { session: ME, id: 2, uid: "t_bbbbbbbbbb" } }), ask("Q4", { subject: "Approve the key", mine: false, asker: "box-2" })]),
 };
 
 test("full view: a car under the todo it names, an ask under the todo it blocks, a car with no todo in its group; another session's ask is not drawn", async (ctx) => {
@@ -117,8 +118,8 @@ test("full view: a car under the todo it names, an ask under the todo it blocks,
 
 test("zh-TW: the ask reads 等你, and an ask of this session with no todo goes in the 等你 group", async (ctx) => {
 	env(ctx, { view: "full" }, "zh_TW.UTF-8");
-	const m = await mount([task(1, "in_progress"), task(2)], () => [], {
-		asks: () => v1([ask("Q3", { item: { session: ME, id: 1 }, subject: "要現在部署嗎？" }), ask("Q5", { subject: "選哪個方案？" })]),
+	const m = await mount([task(1, "in_progress", { uid: "t_cccccccccc" }), task(2)], () => [], {
+		asks: () => v1([ask("Q3", { item: { session: ME, id: 1, uid: "t_cccccccccc" }, subject: "要現在部署嗎？" }), ask("Q5", { subject: "選哪個方案？" })]),
 	});
 	try {
 		assert.deepEqual(m.render(), [
@@ -173,7 +174,7 @@ test("compact mode: car and ask rows go on their todo's row, the ask leads, and 
 test("a todo with only a car shows the car on its compact row, a returned car before a running worker", async (ctx) => {
 	env(ctx, { view: "full", maxWidgetLines: 3 });
 	const m = await mount([task(1, "in_progress", { uid: "t_aaaaaaaaaa", ...bound("w") }), task(2, "in_progress", { uid: "t_bbbbbbbbbb" })], () => [run("w")], {
-		cars: () => v1([car("c1", { item: "t_aaaaaaaaaa", phase: "returned", tone: "bad", line: "↩ returned", wait: "red unit gate" }), car("c2", { item: "abcd1234#2" })]),
+		cars: () => v1([car("c1", { item: "t_aaaaaaaaaa", phase: "returned", tone: "bad", line: "↩ returned", wait: "red unit gate" }), car("c2", { item: `${ME.slice(0, 8)}#2` })]),
 	});
 	try {
 		assert.deepEqual(m.render().slice(1, 3), [
@@ -238,4 +239,16 @@ test("an ask that opens between turns, while a dialog waits, brings the panel up
 	for (let i = 0; i < 5 && !widget; i++) await new Promise((r) => setImmediate(r));
 	assert.deepEqual((widget as Component | undefined)?.render(120).slice(1, 3), ["├─ Waiting on you", "│    └ ⏸ Deploy MP-1 now? 5m"]);
 	await h.fire("session_shutdown");
+});
+
+test("carrows-review-F001: an ask goes under its todo only when the uid it was bound with is that todo's; after clear a new #1 is not blocked by it", async (ctx) => {
+	env(ctx, { view: "full" });
+	for (const item of [{ session: ME, id: 1, uid: "t_oldoldoldo" }, { session: ME, id: 1 }]) {
+		const m = await mount([task(1, "in_progress", { uid: "t_newnewnewn", subject: "a new todo after clear" })], () => [], { asks: () => v1([ask("Q3", { item })]) });
+		try {
+			assert.deepEqual(m.render().slice(1, 4), ["├─ ◐ a new todo after clear", "├─ Waiting on you", "│    └ ⏸ Deploy MP-1 now? 5m"], JSON.stringify(item));
+		} finally {
+			m.overlay.dispose();
+		}
+	}
 });
